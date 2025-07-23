@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-tl_client = TwelveLabs(api_key=os.environ['tl_key'])
-pc = Pinecone(api_key=os.environ['pc_key'])
+tl_client = TwelveLabs(api_key=os.environ['TWELVELABS_API_KEY'])
+pc = Pinecone(api_key=os.environ['PINECONE_API_KEY'])
 ik = Iconik()
 
 # Setup logger
