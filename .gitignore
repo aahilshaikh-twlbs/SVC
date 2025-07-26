@@ -1,5 +1,15 @@
+##############
+# BACKEND
+##############
+
 __pycache__/
 .DS_Store
 .venv/
 *.mp4
-.env
+*.env
+embeddings/
+
+
+##############
+# FRONTEND
+##############

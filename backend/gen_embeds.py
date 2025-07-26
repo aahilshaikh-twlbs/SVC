@@ -19,7 +19,7 @@ ik = Iconik()
 logger = logging.getLogger('Embeddings creation starting')
 logger.setLevel('DEBUG')
 
-index = pc.Index("neuroinsight")
+index = pc.Index("ffmpeg-test")
 
 def parse_event(event):
     logger.info('Parsing event data...')

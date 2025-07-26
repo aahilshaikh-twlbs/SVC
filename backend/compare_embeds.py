@@ -1,24 +1,14 @@
-from gc import collect
-from twelvelabs import TwelveLabs
 from pinecone import Pinecone
-import boto3
 import os
 import json
-import logging
-import hashlib
-from typing import List
-from Iconik.SDK.Iconik import Iconik
-from twelvelabs.models.embed import EmbeddingsTask, SegmentEmbedding
-import math
 import numpy as np
 import csv
 import re
 from dotenv import load_dotenv
 load_dotenv()
 
-pc = Pinecone(api_key=os.environ['pc_key'])
-index = pc.Index("m27assets")
-ik = Iconik()
+pc = Pinecone(api_key=os.environ['PINECONE_API_KEY'])
+index = pc.Index("ffmpeg_tests")
 
 def fetch_segment_embeddings_for_version(
     asset_id: str,
@@ -78,10 +68,6 @@ def fetch_segment_embeddings_for_version(
     # Sort by start_offset_sec ascending
     segments.sort(key=lambda s: s["start_offset_sec"])
     return segments
-
-
-
-
 
 def compare_segments_by_time(
         segments_v1,
