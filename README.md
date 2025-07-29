@@ -1,3 +1,3 @@
-# SVC
+# S.A.G.E
 
-Semantic Video Comparison Tool
+**S**emantic **A**nalysis via **G**raph-based **E**mbeddings
