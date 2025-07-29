@@ -6,6 +6,7 @@ from twelvelabs.models.embed import EmbeddingsTask
 from dotenv import load_dotenv
 import os
 from pinecone import Pinecone
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -14,7 +15,7 @@ load_dotenv()
 tl_client = TwelveLabs(api_key=os.environ['TWELVELABS_API_KEY'])
 pc = Pinecone(api_key=os.environ['PINECONE_API_KEY'])
 
-def generate_embedding(video_file, engine="Marengo-retrieval-2.7"):
+def generate_embedding(video_file=None, yt_url=None, engine="Marengo-retrieval-2.7"):
     """
     Generate embeddings for a video file using TwelveLabs API.
     
@@ -28,7 +29,9 @@ def generate_embedding(video_file, engine="Marengo-retrieval-2.7"):
     # Create an embedding task
     task = tl_client.embed.task.create(
         model_name=engine,
-        video_file=video_file
+        video_file=video_file,
+        video_url=yt_url,
+        video_clip_length=2
     )
     print(f"Created task: id={task.id} engine_name={task.model_name} status={task.status}")
     
@@ -42,19 +45,13 @@ def generate_embedding(video_file, engine="Marengo-retrieval-2.7"):
     )
     print(f"Embedding done: {status}")
     
-    # Retrieve results
+    # Retrieve results (full with all metadata)
     task_result = tl_client.embed.task.retrieve(task.id)
     
-    # Extract embeddings and metadata
-    embeddings = task_result.float
-    time_ranges = task_result.time_ranges
-    scope = task_result.scope
-    # full_embeddings=task_result
-    
-    return embeddings, time_ranges, scope
-    # return full_embeddings
+    # return on call
+    return task_result
 
-def ingest_data(video_file, index_name="ffmpeg-test"):
+def ingest_data(video_file, index_name="ffmpeg-dense-2"):
     """
     Generate embeddings and store them in Pinecone.
     
@@ -63,21 +60,25 @@ def ingest_data(video_file, index_name="ffmpeg-test"):
         index_name (str): Name of the Pinecone index
     """
     # Generate embeddings
-    embeddings, time_ranges, scope = generate_embedding(video_file)
+    full_embeddings = generate_embedding(video_file)
     
     # Connect to Pinecone index
     index = pc.Index(index_name)
     
     # Prepare vectors for upsert
     vectors = []
-    for i, embedding in enumerate(embeddings):
+    # Extract segments from video_embedding
+    segments = full_embeddings.video_embedding.segments
+    for i, segment in enumerate(segments):
         vectors.append({
             "id": f"{video_file}_{i}",
-            "values": embedding,
+            "values": segment.embeddings_float,
             "metadata": {
                 "video_file": video_file,
-                "time_range": time_ranges[i],
-                "scope": scope
+                "start_offset_sec": segment.start_offset_sec,
+                "end_offset_sec": segment.end_offset_sec,
+                "scope": segment.embedding_scope,
+                "embedding_option": segment.embedding_option
             }
         })
     
@@ -85,7 +86,16 @@ def ingest_data(video_file, index_name="ffmpeg-test"):
     index.upsert(vectors=vectors)
     print(f"Successfully ingested {len(vectors)} embeddings into Pinecone")
 
+def main(in1, in2):
+    """
+    Essentially mutlithreads the generate-->upload-to-pinecone process for both videos
+    """
+    threading.Thread(target=ingest_data, args=(in1,)).start()
+    threading.Thread(target=ingest_data, args=(in2,)).start()
 
 
+main("/Users/ashaikh/Documents/Code/SVC/backend/ffmpeg_tests/2b2g6b.mp4", "/Users/ashaikh/Documents/Code/SVC/backend/ffmpeg_tests/10b.mp4")
 
-ingest_data("/Users/ashaikh/Documents/Code/SVC/backend/ffmpeg_tests/2b2g6b.mp4")
+### todo
+# function to then pull values from the pineconedb for the just-created embeds, separated by video for no mix ups obviously
+# then we run @compare_embeds.py with the 
