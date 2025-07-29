@@ -97,6 +97,7 @@ def create_index():
     if created_index.updated_at:
         print(f"Updated at: {created_index.updated_at}")
 def list_indexes_direct_pagination():
+
     """
     The list method retrieves a paginated list of indexes based on the provided parameters. 
     Choose this method mainly when the total number of items is manageable or you must fetch a single page of results. 
@@ -149,6 +150,14 @@ def list_indexes_direct_pagination():
         print(f"  Created at: {index.created_at}")
         if index.updated_at:
             print(f"  Updated at: {index.updated_at}")
+def rename_index():
+    """
+    Literally rename index use this perhaps"""
+    tl_client.index.update(id="<INDEX_ID>", name="<NEW_INDEX_NAME>")
+
+def delete_index():
+    """"Pretty damn simple and it deletes an index"""
+    tl_client.index.delete(id="<YOUR_INDEX_ID>")
 
 ####### ALL VIDEO-RELATED FUNCTIONS WE NEED
 def upload_video():
@@ -165,7 +174,7 @@ def upload_video():
     **kwargs	dict	No	Additional keyword arguments for the request. (GENERALLY NONE)
     """
     task = tl_client.task.create(
-        index_id=<"<YOUR_INDEX_ID>",
+        index_id="<YOUR_INDEX_ID>",
         file="<YOUR_FILE_PATH>"
     )
     print(f"Task id={task.id}")
@@ -247,6 +256,12 @@ def list_videos_direct_pagination():
             print(f"    Type: {video.source.type}")
             print(f"    Name: {video.source.name}")
             print(f"    URL: {video.source.url}")
+def delete_vid():
+    """
+    deletes video when index selected
+    """
+    tl_client.task.delete(index_id="<YOUR_INDEX_ID>",id="<YOUR_VIDEO_ID>")
+
 
 ###### RETRIEVAL COMMANDS
 def retrieve_embeds():
@@ -264,7 +279,7 @@ def retrieve_embeds():
     task = tl_client.embed.task.retrieve(embedding_option=["visual-text"])
     if task.video_embedding is not None and task.video_embedding.segments is not None:
         print_segments(task.video_embedding.segments)
-def check_if_done():
+def check_if_done(task: EmbeddingsTask):
     """"
     This method waits until a video embedding task is completed by periodically checking its status. If you provide a callback function, it calls the function after each status update with the current task object, allowing you to monitor progress."""
     def on_task_update(task: EmbeddingsTask):

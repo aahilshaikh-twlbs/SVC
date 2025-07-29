@@ -32,12 +32,16 @@ async function apiRequest<T>(
 }
 
 export const api = {
-  // API Key validation
+  // API Key validation and persistence
   validateApiKey: async (key: string): Promise<ApiKeyConfig> => {
     return apiRequest<ApiKeyConfig>('/validate-key', {
       method: 'POST',
       body: JSON.stringify({ key }),
     });
+  },
+
+  getStoredApiKey: async (): Promise<{ has_stored_key: boolean }> => {
+    return apiRequest<{ has_stored_key: boolean }>('/stored-api-key');
   },
 
   // Index operations
@@ -52,9 +56,28 @@ export const api = {
     });
   },
 
+  renameIndex: async (indexId: string, newName: string): Promise<Index> => {
+    return apiRequest<Index>(`/indexes/${indexId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ new_name: newName }),
+    });
+  },
+
+  deleteIndex: async (indexId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/indexes/${indexId}`, {
+      method: 'DELETE',
+    });
+  },
+
   // Video operations
   listVideos: async (indexId: string): Promise<Video[]> => {
     return apiRequest<Video[]>(`/indexes/${indexId}/videos`);
+  },
+
+  deleteVideo: async (indexId: string, videoId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/indexes/${indexId}/videos/${videoId}`, {
+      method: 'DELETE',
+    });
   },
 
   uploadVideo: async (data: UploadVideoData): Promise<{ task_id: string; video_id: string }> => {

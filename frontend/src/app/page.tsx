@@ -1,23 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ApiKeyConfig } from '@/components/ApiKeyConfig';
 import { IndexVisualizer } from '@/components/IndexVisualizer';
 import { VideoVisualizer } from '@/components/VideoVisualizer';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Settings } from 'lucide-react';
 import { Index, Video } from '@/types';
+import { api } from '@/lib/api';
 
 export default function LandingPage() {
   const [apiKey, setApiKey] = useState('');
   const [selectedIndex, setSelectedIndex] = useState<Index | null>(null);
   const [selectedVideos, setSelectedVideos] = useState<Video[]>([]);
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for stored API key on component mount
+  useEffect(() => {
+    const checkStoredApiKey = async () => {
+      try {
+        const result = await api.getStoredApiKey();
+        if (result.has_stored_key) {
+          // If there's a stored key, we can skip the API key input
+          // For now, we'll still show the input but could auto-validate
+          setShowApiKeyConfig(false);
+        }
+      } catch (error) {
+        console.error('Error checking stored API key:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkStoredApiKey();
+  }, []);
 
   const handleKeyValidated = (key: string) => {
     setApiKey(key);
     setSelectedIndex(null);
     setSelectedVideos([]);
+    setShowApiKeyConfig(false);
   };
 
   const handleIndexSelected = (index: Index) => {
@@ -52,6 +75,14 @@ export default function LandingPage() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   if (!apiKey) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -67,7 +98,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-gray-900">SVC - Semantic Video Comparison</h1>
+              <h1 className="text-xl font-semibold text-gray-900">SAGE - Semantic Analysis via Graph-based Embeddings</h1>
               {selectedIndex && (
                 <Button
                   onClick={handleBackToIndexes}

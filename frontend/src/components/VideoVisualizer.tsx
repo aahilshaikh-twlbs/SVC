@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Video, Clock, Upload, Link, FileVideo } from 'lucide-react';
+import { Plus, Video, Clock, Upload, Link, FileVideo, Trash2 } from 'lucide-react';
 import { Video as VideoType, Index } from '@/types';
 import { api } from '@/lib/api';
 import { formatDuration, formatFileSize, formatDate } from '@/lib/utils';
+import Image from 'next/image';
 
 interface VideoVisualizerProps {
   selectedIndex: Index;
@@ -22,24 +23,25 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
   const [uploadUrl, setUploadUrl] = useState('');
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [deletingVideo, setDeletingVideo] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadVideos();
-  }, [selectedIndex.id]);
-
-  const loadVideos = async () => {
+  const loadVideos = useCallback(async () => {
     setLoading(true);
     setError('');
     
     try {
       const data = await api.listVideos(selectedIndex.id);
       setVideos(data);
-    } catch (err) {
+    } catch {
       setError('Failed to load videos');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedIndex.id]);
+
+  useEffect(() => {
+    loadVideos();
+  }, [loadVideos]);
 
   const handleUpload = async () => {
     if (uploadType === 'file' && !uploadFile) {
@@ -61,7 +63,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         url: uploadType === 'url' ? uploadUrl : undefined,
       };
 
-      const result = await api.uploadVideo(uploadData);
+      await api.uploadVideo(uploadData);
       
       // Reset form
       resetFileInput();
@@ -73,10 +75,20 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         loadVideos();
       }, 2000);
       
-    } catch (err) {
+    } catch {
       setError('Failed to upload video');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteVideo = async (videoId: string) => {
+    try {
+      await api.deleteVideo(selectedIndex.id, videoId);
+      setVideos(prev => prev.filter(video => video.id !== videoId));
+      setDeletingVideo(null);
+    } catch {
+      setError('Failed to delete video');
     }
   };
 
@@ -106,7 +118,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         <div className="flex items-center gap-2">
           <Video className="w-5 h-5 text-blue-600" />
           <h2 className="text-xl font-semibold text-gray-900">
-            Videos in "{selectedIndex.name}"
+            Videos in &quot;{selectedIndex.name}&quot;
           </h2>
         </div>
         <Button
@@ -213,58 +225,103 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         {videos.map((video) => (
           <div
             key={video.id}
-            onClick={() => onVideoSelected(video)}
-            className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow"
           >
             <div className="flex items-start justify-between mb-3">
               <h3 className="font-medium text-gray-900 truncate">
                 {video.system_metadata.filename}
               </h3>
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                {video.id.slice(0, 8)}...
-              </span>
-            </div>
-
-            {video.hls?.thumbnail_urls?.[0] && (
-              <div className="mb-3">
-                <img
-                  src={video.hls.thumbnail_urls[0]}
-                  alt="Video thumbnail"
-                  className="w-full h-32 object-cover rounded-md"
-                />
-              </div>
-            )}
-
-            <div className="space-y-2 text-sm text-gray-600">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                <span>{formatDuration(video.system_metadata.duration)}</span>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Video className="w-4 h-4" />
-                <span>{video.system_metadata.width}×{video.system_metadata.height}</span>
-              </div>
-
-              <div className="text-xs text-gray-500">
-                {formatFileSize(video.system_metadata.size)}
-              </div>
-
-              <div className="text-xs text-gray-500">
-                Uploaded {formatDate(video.created_at)}
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                  {video.id.slice(0, 8)}...
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeletingVideo(video.id);
+                  }}
+                  className="p-1 h-6 w-6 text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </div>
 
-            {video.source && (
-              <div className="mt-3 pt-3 border-t border-gray-100">
+            <div 
+              className="cursor-pointer"
+              onClick={() => onVideoSelected(video)}
+            >
+              {video.hls?.thumbnail_urls?.[0] && (
+                <div className="mb-3">
+                  <Image
+                    src={video.hls.thumbnail_urls[0]}
+                    alt="Video thumbnail"
+                    width={400}
+                    height={128}
+                    className="w-full h-32 object-cover rounded-md"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  <span>{formatDuration(video.system_metadata.duration)}</span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <Video className="w-4 h-4" />
+                  <span>{video.system_metadata.width}×{video.system_metadata.height}</span>
+                </div>
+
                 <div className="text-xs text-gray-500">
-                  Source: {video.source.type} - {video.source.name}
+                  {formatFileSize(video.system_metadata.size)}
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  Uploaded {formatDate(video.created_at)}
                 </div>
               </div>
-            )}
+
+              {video.source && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="text-xs text-gray-500">
+                    Source: {video.source.type} - {video.source.name}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deletingVideo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+            <h3 className="text-lg font-medium mb-4">Delete Video</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete this video? This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleDeleteVideo(deletingVideo)}
+                variant="destructive"
+              >
+                Delete
+              </Button>
+              <Button
+                onClick={() => setDeletingVideo(null)}
+                variant="outline"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {videos.length === 0 && !loading && (
         <div className="text-center py-8 text-gray-500">

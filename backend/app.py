@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 import uuid
 import logging
+import sqlite3
 from twelvelabs import TwelveLabs
 from twelvelabs.models.task import Task
 
@@ -13,7 +14,7 @@ from twelvelabs.models.task import Task
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SVC Backend", version="1.0.0")
+app = FastAPI(title="SAGE Backend", version="1.0.0")
 
 # Add CORS middleware
 app.add_middleware(
@@ -23,6 +24,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Database setup
+DB_PATH = "sage.db"
+
+def init_db():
+    """Initialize SQLite database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_db()
 
 # Global variable to store the API key
 current_api_key = None
@@ -80,12 +101,50 @@ class ApiKeyResponse(BaseModel):
 class CreateIndexRequest(BaseModel):
     name: str
 
+class RenameIndexRequest(BaseModel):
+    new_name: str
+
+def hash_api_key(key: str) -> str:
+    """Simple hash function for API key storage"""
+    import hashlib
+    return hashlib.sha256(key.encode()).hexdigest()
+
+def save_api_key(key: str):
+    """Save API key hash to database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    key_hash = hash_api_key(key)
+    try:
+        cursor.execute('INSERT OR REPLACE INTO api_keys (key_hash) VALUES (?)', (key_hash,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error saving API key: {e}")
+    finally:
+        conn.close()
+
+def get_stored_api_key() -> Optional[str]:
+    """Get the most recently stored API key"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT key_hash FROM api_keys ORDER BY created_at DESC LIMIT 1')
+        result = cursor.fetchone()
+        if result:
+            # For now, we'll return the hash. In a real app, you'd want to encrypt/decrypt
+            return result[0]
+    except Exception as e:
+        logger.error(f"Error retrieving API key: {e}")
+    finally:
+        conn.close()
+    return None
+
 def initialize_twelve_labs_client(api_key: str):
     """Initialize the TwelveLabs client with the provided API key"""
     global tl_client, current_api_key
     try:
         tl_client = TwelveLabs(api_key=api_key)
         current_api_key = api_key
+        save_api_key(api_key)  # Save the API key
         logger.info("Successfully initialized TwelveLabs client")
         return True
     except Exception as e:
@@ -172,7 +231,7 @@ def convert_twelve_labs_video_to_model(tl_video):
 
 @app.get("/")
 async def root():
-    return {"message": "SVC Backend API"}
+    return {"message": "SAGE Backend API"}
 
 @app.post("/validate-key")
 async def validate_api_key(request: ApiKeyValidation):
@@ -184,27 +243,25 @@ async def validate_api_key(request: ApiKeyValidation):
     logger.error("API key validation failed")
     return ApiKeyResponse(key=request.key, isValid=False)
 
+@app.get("/stored-api-key")
+async def get_stored_key():
+    """Get the stored API key hash"""
+    key_hash = get_stored_api_key()
+    return {"has_stored_key": key_hash is not None}
+
 @app.get("/indexes")
 async def list_indexes():
     """List all indexes using real TwelveLabs API"""
     if not tl_client:
-        logger.error("API key not initialized")
         raise HTTPException(status_code=400, detail="API key not initialized")
     
     try:
         logger.info("Fetching indexes from TwelveLabs...")
-        # Use the function from SVC.py - list_indexes_direct_pagination
         indexes = tl_client.index.list(
             model_family="marengo",
             sort_by="created_at",
             sort_option="desc"
         )
-        
-        # Debug: print the first index to see its structure
-        if indexes:
-            logger.info(f"First index structure: {type(indexes[0])}")
-            logger.info(f"First index ID: {indexes[0].id}")
-            logger.info(f"First index name: {indexes[0].name}")
         
         logger.info(f"Found {len(indexes)} indexes")
         
@@ -216,7 +273,6 @@ async def list_indexes():
                 result.append(converted_index)
             except Exception as e:
                 logger.error(f"Error converting index {index.id}: {e}")
-                # Skip this index but continue with others
                 continue
         
         logger.info(f"Successfully converted {len(result)} indexes")
@@ -233,7 +289,6 @@ async def create_index(request: CreateIndexRequest):
     
     try:
         logger.info(f"Creating new index: {request.name}")
-        # Use the function from SVC.py - create_index
         models = [
             {
                 "name": "marengo2.7",
@@ -253,6 +308,41 @@ async def create_index(request: CreateIndexRequest):
         logger.error(f"Error creating index: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating index: {str(e)}")
 
+@app.put("/indexes/{index_id}")
+async def rename_index(index_id: str, request: RenameIndexRequest):
+    """Rename an index"""
+    if not tl_client:
+        raise HTTPException(status_code=400, detail="API key not initialized")
+    
+    try:
+        logger.info(f"Renaming index {index_id} to: {request.new_name}")
+        updated_index = tl_client.index.update(
+            id=index_id,
+            name=request.new_name
+        )
+        
+        logger.info(f"Successfully renamed index: {index_id}")
+        return convert_twelve_labs_index_to_model(updated_index)
+    except Exception as e:
+        logger.error(f"Error renaming index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error renaming index: {str(e)}")
+
+@app.delete("/indexes/{index_id}")
+async def delete_index(index_id: str):
+    """Delete an index"""
+    if not tl_client:
+        raise HTTPException(status_code=400, detail="API key not initialized")
+    
+    try:
+        logger.info(f"Deleting index: {index_id}")
+        tl_client.index.delete(id=index_id)
+        
+        logger.info(f"Successfully deleted index: {index_id}")
+        return {"message": f"Index {index_id} deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting index: {str(e)}")
+
 @app.get("/indexes/{index_id}/videos")
 async def list_videos(index_id: str):
     """List videos in an index using real TwelveLabs API"""
@@ -261,7 +351,6 @@ async def list_videos(index_id: str):
     
     try:
         logger.info(f"Fetching videos for index: {index_id}")
-        # Use the function from SVC.py - list_videos_direct_pagination
         videos = tl_client.index.video.list(
             index_id=index_id,
             sort_by="created_at",
@@ -278,7 +367,6 @@ async def list_videos(index_id: str):
                 result.append(converted_video)
             except Exception as e:
                 logger.error(f"Error converting video {video.id}: {e}")
-                # Skip this video but continue with others
                 continue
         
         logger.info(f"Successfully converted {len(result)} videos")
@@ -286,6 +374,22 @@ async def list_videos(index_id: str):
     except Exception as e:
         logger.error(f"Error fetching videos: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching videos: {str(e)}")
+
+@app.delete("/indexes/{index_id}/videos/{video_id}")
+async def delete_video(index_id: str, video_id: str):
+    """Delete a video from an index"""
+    if not tl_client:
+        raise HTTPException(status_code=400, detail="API key not initialized")
+    
+    try:
+        logger.info(f"Deleting video {video_id} from index {index_id}")
+        tl_client.task.delete(index_id=index_id, id=video_id)
+        
+        logger.info(f"Successfully deleted video: {video_id}")
+        return {"message": f"Video {video_id} deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting video: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting video: {str(e)}")
 
 @app.post("/upload-video")
 async def upload_video(
@@ -302,7 +406,7 @@ async def upload_video(
     
     try:
         logger.info(f"Uploading video to index: {index_id}")
-        # Use the function from SVC.py - upload_video
+        
         if file:
             # Save uploaded file temporarily
             temp_path = f"/tmp/{file.filename}"
@@ -315,10 +419,14 @@ async def upload_video(
                 file=temp_path
             )
         else:
-            task = tl_client.task.create(
-                index_id=index_id,
-                url=url
-            )
+            # Handle YouTube URL
+            if "youtube.com" in url or "youtu.be" in url:
+                task = tl_client.task.create(
+                    index_id=index_id,
+                    url=url
+                )
+            else:
+                raise HTTPException(status_code=400, detail="Invalid YouTube URL")
         
         logger.info(f"Upload task created: {task.id}")
         return {
