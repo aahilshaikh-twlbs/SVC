@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Database, Video, Clock, MoreVertical } from 'lucide-react';
+import { Plus, Database, Video, Clock, Edit, Trash2, MoreVertical } from 'lucide-react';
 import { Index } from '@/types';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
@@ -34,7 +34,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     try {
       const data = await api.listIndexes();
       setIndexes(data);
-    } catch {
+    } catch (err) {
       setError('Failed to load indexes');
     } finally {
       setLoading(false);
@@ -50,7 +50,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
       setIndexes(prev => [newIndex, ...prev]);
       setNewIndexName('');
       setShowCreateForm(false);
-    } catch {
+    } catch (err) {
       setError('Failed to create index');
     } finally {
       setCreating(false);
@@ -67,7 +67,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
       ));
       setEditingIndex(null);
       setEditingName('');
-    } catch {
+    } catch (err) {
       setError('Failed to rename index');
     }
   };
@@ -77,7 +77,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
       await api.deleteIndex(indexId);
       setIndexes(prev => prev.filter(index => index.id !== indexId));
       setDeletingIndex(null);
-    } catch {
+    } catch (err) {
       setError('Failed to delete index');
     }
   };

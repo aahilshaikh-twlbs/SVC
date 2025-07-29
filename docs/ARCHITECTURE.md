@@ -207,4 +207,4 @@ npm run dev
 
 ## License
 
-MIT
+[Add your license information here]

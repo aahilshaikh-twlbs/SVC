@@ -31,7 +31,7 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
       } else {
         setError('Invalid API key');
       }
-    } catch {
+    } catch (err) {
       setError('Failed to validate API key. Please try again.');
     } finally {
       setIsValidating(false);

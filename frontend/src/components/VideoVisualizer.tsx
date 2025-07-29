@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, Video, Clock, Upload, Link, FileVideo, Trash2 } from 'lucide-react';
 import { Video as VideoType, Index } from '@/types';
 import { api } from '@/lib/api';
 import { formatDuration, formatFileSize, formatDate } from '@/lib/utils';
-import Image from 'next/image';
 
 interface VideoVisualizerProps {
   selectedIndex: Index;
@@ -25,23 +24,23 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
   const [uploading, setUploading] = useState(false);
   const [deletingVideo, setDeletingVideo] = useState<string | null>(null);
 
-  const loadVideos = useCallback(async () => {
+  useEffect(() => {
+    loadVideos();
+  }, [selectedIndex.id]);
+
+  const loadVideos = async () => {
     setLoading(true);
     setError('');
     
     try {
       const data = await api.listVideos(selectedIndex.id);
       setVideos(data);
-    } catch {
+    } catch (err) {
       setError('Failed to load videos');
     } finally {
       setLoading(false);
     }
-  }, [selectedIndex.id]);
-
-  useEffect(() => {
-    loadVideos();
-  }, [loadVideos]);
+  };
 
   const handleUpload = async () => {
     if (uploadType === 'file' && !uploadFile) {
@@ -63,7 +62,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         url: uploadType === 'url' ? uploadUrl : undefined,
       };
 
-      await api.uploadVideo(uploadData);
+      const result = await api.uploadVideo(uploadData);
       
       // Reset form
       resetFileInput();
@@ -75,7 +74,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         loadVideos();
       }, 2000);
       
-    } catch {
+    } catch (err) {
       setError('Failed to upload video');
     } finally {
       setUploading(false);
@@ -87,7 +86,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
       await api.deleteVideo(selectedIndex.id, videoId);
       setVideos(prev => prev.filter(video => video.id !== videoId));
       setDeletingVideo(null);
-    } catch {
+    } catch (err) {
       setError('Failed to delete video');
     }
   };
@@ -118,7 +117,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         <div className="flex items-center gap-2">
           <Video className="w-5 h-5 text-blue-600" />
           <h2 className="text-xl font-semibold text-gray-900">
-            Videos in &quot;{selectedIndex.name}&quot;
+            Videos in "{selectedIndex.name}"
           </h2>
         </div>
         <Button
@@ -255,11 +254,9 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
             >
               {video.hls?.thumbnail_urls?.[0] && (
                 <div className="mb-3">
-                  <Image
+                  <img
                     src={video.hls.thumbnail_urls[0]}
                     alt="Video thumbnail"
-                    width={400}
-                    height={128}
                     className="w-full h-32 object-cover rounded-md"
                   />
                 </div>

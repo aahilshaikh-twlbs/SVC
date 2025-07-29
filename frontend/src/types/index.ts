@@ -18,7 +18,7 @@ export interface Video {
   created_at: string;
   updated_at: string;
   system_metadata: SystemMetadata;
-  user_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, any>;
   hls?: HLSData;
   source?: SourceData;
 }
