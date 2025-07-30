@@ -14,9 +14,10 @@ interface VideoVisualizerProps {
   apiKey: string;
   onVideoSelected: (video: VideoType) => void;
   onVideosLoaded: (videos: VideoType[]) => void;
+  onRemoveVideo: (videoId: string) => void;
 }
 
-export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiKey, onVideoSelected, onVideosLoaded }: VideoVisualizerProps) {
+export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiKey, onVideoSelected, onVideosLoaded, onRemoveVideo }: VideoVisualizerProps) {
   const [videos, setVideos] = useState<VideoType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,7 +38,7 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
     setError('');
     
     try {
-      const data = await api.listVideos(selectedIndex.id, apiKey);
+      const data = await api.listVideos(selectedIndex.id);
       setVideos(data);
       onVideosLoaded(data);
     } catch (err) {
@@ -67,7 +68,7 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
         url: uploadType === 'url' ? uploadUrl : undefined,
       };
 
-      const result = await api.uploadVideo(uploadData, apiKey);
+      const result = await api.uploadVideo(uploadData);
       
       // Reset form
       resetFileInput();
@@ -88,7 +89,7 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
 
   const handleDeleteVideo = async (videoId: string) => {
     try {
-      await api.deleteVideo(selectedIndex.id, videoId, apiKey);
+      await api.deleteVideo(selectedIndex.id, videoId);
       setVideos(prev => prev.filter(video => video.id !== videoId));
       setDeletingVideo(null);
     } catch (err) {

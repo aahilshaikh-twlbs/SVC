@@ -21,10 +21,26 @@ export default function LandingPage() {
   useEffect(() => {
     const checkStoredApiKey = async () => {
       try {
-        const result = await api.getStoredApiKey();
-        if (result.has_stored_key) {
-          // User has a stored key, but we need them to re-enter it for security
-          setShowApiKeyConfig(true);
+        // Check localStorage for stored API key
+        const storedKey = localStorage.getItem('sage_api_key');
+        if (storedKey) {
+          // Validate the stored key
+          const result = await api.validateApiKey(storedKey);
+          if (result.isValid) {
+            setApiKey(storedKey);
+            setShowApiKeyConfig(false);
+          } else {
+            // Invalid key, remove it
+            localStorage.removeItem('sage_api_key');
+            setShowApiKeyConfig(true);
+          }
+        } else {
+          // Check backend for stored key
+          const result = await api.getStoredApiKey();
+          if (result.has_stored_key) {
+            // Backend has a key but frontend doesn't, show config
+            setShowApiKeyConfig(true);
+          }
         }
       } catch (error) {
         console.error('Error checking stored API key:', error);
@@ -38,6 +54,8 @@ export default function LandingPage() {
 
   const handleKeyValidated = (key: string) => {
     setApiKey(key);
+    // Store the API key in localStorage for persistence
+    localStorage.setItem('sage_api_key', key);
     setSelectedIndex(null);
     setSelectedVideos([]);
     setAllVideos([]);
@@ -46,6 +64,7 @@ export default function LandingPage() {
 
   const handleIndexSelected = (index: Index) => {
     setSelectedIndex(index);
+    // Don't clear selected videos - keep them persistent across indexes
   };
 
   const handleVideoSelected = (video: Video) => {
@@ -61,6 +80,10 @@ export default function LandingPage() {
         }
       }
     });
+  };
+
+  const handleRemoveVideo = (videoId: string) => {
+    setSelectedVideos(prev => prev.filter(v => v.id !== videoId));
   };
 
   const handleVideosLoaded = (videos: Video[]) => {
@@ -79,7 +102,7 @@ export default function LandingPage() {
 
   const handleBackToIndexes = () => {
     setSelectedIndex(null);
-    setSelectedVideos([]);
+    // Don't clear selected videos - keep them persistent
   };
 
   const handleRunComparison = () => {
@@ -112,7 +135,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-gray-900">SAGE - Semantic Analysis via Graph-based Embeddings</h1>
+              <h1 className="text-xl font-semibold text-gray-900">SAGE</h1>
               {selectedIndex && (
                 <Button
                   onClick={handleBackToIndexes}
@@ -159,9 +182,16 @@ export default function LandingPage() {
                       {selectedVideos.map((video, index) => (
                         <span
                           key={video.id}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
+                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded flex items-center gap-1"
                         >
-                          {index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)
+                          <span>{index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)</span>
+                                              <button
+                      onClick={() => handleRemoveVideo(video.id)}
+                      className="ml-1 text-blue-600 hover:text-blue-800 text-sm font-bold"
+                      title="Remove from selection"
+                    >
+                      ×
+                    </button>
                         </span>
                       ))}
                     </div>
@@ -180,11 +210,11 @@ export default function LandingPage() {
                     </Button>
                   )}
                 </div>
-                {selectedVideos.length === 2 && !canRunComparison() && (
-                  <div className="mt-2 text-xs text-red-600">
-                    ⚠️ Both videos must have the exact same duration for comparison
-                  </div>
-                )}
+                                    {selectedVideos.length === 2 && !canRunComparison() && (
+                      <div className="mt-2 text-xs text-orange-700">
+                        ⚠️ Both videos must have the exact same duration for comparison
+                      </div>
+                    )}
               </div>
             )}
 
@@ -195,12 +225,17 @@ export default function LandingPage() {
               apiKey={apiKey}
               onVideoSelected={handleVideoSelected}
               onVideosLoaded={handleVideosLoaded}
+              onRemoveVideo={handleRemoveVideo}
             />
           </div>
         ) : (
           <IndexVisualizer
             apiKey={apiKey}
+            selectedVideos={selectedVideos}
             onIndexSelected={handleIndexSelected}
+            onRemoveVideo={handleRemoveVideo}
+            onRunComparison={handleRunComparison}
+            canRunComparison={canRunComparison}
           />
         )}
       </main>

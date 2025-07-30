@@ -19,8 +19,10 @@ async function apiRequest<T>(
     ...options.headers,
   };
 
-  if (apiKey) {
-    headers['X-API-Key'] = apiKey;
+  // Use provided apiKey or get from localStorage
+  const keyToUse = apiKey || localStorage.getItem('sage_api_key');
+  if (keyToUse) {
+    headers['X-API-Key'] = keyToUse;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -52,42 +54,42 @@ export const api = {
   },
 
   // Index operations
-  listIndexes: async (apiKey: string): Promise<Index[]> => {
+  listIndexes: async (apiKey?: string): Promise<Index[]> => {
     return apiRequest<Index[]>('/indexes', {}, apiKey);
   },
 
-  createIndex: async (data: CreateIndexData, apiKey: string): Promise<Index> => {
+  createIndex: async (data: CreateIndexData, apiKey?: string): Promise<Index> => {
     return apiRequest<Index>('/indexes', {
       method: 'POST',
       body: JSON.stringify(data),
     }, apiKey);
   },
 
-  renameIndex: async (indexId: string, newName: string, apiKey: string): Promise<Index> => {
+  renameIndex: async (indexId: string, newName: string, apiKey?: string): Promise<Index> => {
     return apiRequest<Index>(`/indexes/${indexId}`, {
       method: 'PUT',
       body: JSON.stringify({ new_name: newName }),
     }, apiKey);
   },
 
-  deleteIndex: async (indexId: string, apiKey: string): Promise<{ message: string }> => {
+  deleteIndex: async (indexId: string, apiKey?: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/indexes/${indexId}`, {
       method: 'DELETE',
     }, apiKey);
   },
 
   // Video operations
-  listVideos: async (indexId: string, apiKey: string): Promise<Video[]> => {
+  listVideos: async (indexId: string, apiKey?: string): Promise<Video[]> => {
     return apiRequest<Video[]>(`/indexes/${indexId}/videos`, {}, apiKey);
   },
 
-  deleteVideo: async (indexId: string, videoId: string, apiKey: string): Promise<{ message: string }> => {
+  deleteVideo: async (indexId: string, videoId: string, apiKey?: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/indexes/${indexId}/videos/${videoId}`, {
       method: 'DELETE',
     }, apiKey);
   },
 
-  uploadVideo: async (data: UploadVideoData, apiKey: string): Promise<{ task_id: string; video_id: string }> => {
+  uploadVideo: async (data: UploadVideoData, apiKey?: string): Promise<{ task_id: string; video_id: string }> => {
     const formData = new FormData();
     formData.append('index_id', data.index_id);
     
@@ -99,8 +101,9 @@ export const api = {
     }
 
     const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers['X-API-Key'] = apiKey;
+    const keyToUse = apiKey || localStorage.getItem('sage_api_key');
+    if (keyToUse) {
+      headers['X-API-Key'] = keyToUse;
     }
 
     const response = await fetch(`${API_BASE_URL}/upload-video`, {
@@ -117,7 +120,7 @@ export const api = {
   },
 
   // Task status checking
-  checkTaskStatus: async (taskId: string, apiKey: string): Promise<{ status: string; video_id?: string }> => {
+  checkTaskStatus: async (taskId: string, apiKey?: string): Promise<{ status: string; video_id?: string }> => {
     return apiRequest<{ status: string; video_id?: string }>(`/tasks/${taskId}`, {}, apiKey);
   },
 }; 

@@ -2,17 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Database, Video, Clock, Edit, Trash2, MoreVertical } from 'lucide-react';
-import { Index } from '@/types';
+import { Plus, Database, Video as VideoIcon, Clock, Edit, Trash2, MoreVertical, Check } from 'lucide-react';
+import { Index, Video } from '@/types';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 
 interface IndexVisualizerProps {
   apiKey: string;
+  selectedVideos: Video[];
   onIndexSelected: (index: Index) => void;
+  onRemoveVideo?: (videoId: string) => void;
+  onRunComparison?: () => void;
+  canRunComparison?: () => boolean;
 }
 
-export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProps) {
+export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRemoveVideo, onRunComparison, canRunComparison }: IndexVisualizerProps) {
   const [indexes, setIndexes] = useState<Index[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,7 +36,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     setError('');
     
     try {
-      const data = await api.listIndexes(apiKey);
+      const data = await api.listIndexes();
       setIndexes(data);
     } catch (err) {
       setError('Failed to load indexes');
@@ -46,7 +50,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
 
     setCreating(true);
     try {
-      const newIndex = await api.createIndex({ name: newIndexName }, apiKey);
+      const newIndex = await api.createIndex({ name: newIndexName });
       setIndexes(prev => [newIndex, ...prev]);
       setNewIndexName('');
       setShowCreateForm(false);
@@ -61,7 +65,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     if (!editingName.trim()) return;
 
     try {
-      const updatedIndex = await api.renameIndex(indexId, editingName, apiKey);
+      const updatedIndex = await api.renameIndex(indexId, editingName);
       setIndexes(prev => prev.map(index => 
         index.id === indexId ? updatedIndex : index
       ));
@@ -74,7 +78,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
 
   const handleDeleteIndex = async (indexId: string) => {
     try {
-      await api.deleteIndex(indexId, apiKey);
+      await api.deleteIndex(indexId);
       setIndexes(prev => prev.filter(index => index.id !== indexId));
       setDeletingIndex(null);
     } catch (err) {
@@ -87,6 +91,14 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     setEditingName(index.name);
   };
 
+  const getSelectedVideosFromIndex = (indexId: string) => {
+    return selectedVideos.filter(video => {
+      // We need to check if this video belongs to this index
+      // For now, we'll show all selected videos, but ideally we'd track which index each video belongs to
+      return true; // This will show all selected videos for now
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -97,6 +109,54 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
 
   return (
     <div className="space-y-6">
+      {/* Selected Videos Banner */}
+      {selectedVideos.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-blue-900">
+                Selected Videos: {selectedVideos.length}/2
+              </span>
+              <div className="flex gap-2">
+                {selectedVideos.map((video, index) => (
+                  <span
+                    key={video.id}
+                    className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded flex items-center gap-1"
+                  >
+                    <span>{index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)</span>
+                    <button
+                      onClick={() => onRemoveVideo?.(video.id)}
+                      className="ml-1 text-blue-600 hover:text-blue-800 text-sm font-bold"
+                      title="Remove from selection"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+            {selectedVideos.length === 2 && (
+              <Button
+                onClick={() => onRunComparison?.()}
+                disabled={!canRunComparison?.()}
+                className={`${
+                  canRunComparison?.() 
+                    ? 'bg-blue-600 hover:bg-blue-700' 
+                    : 'bg-gray-400 cursor-not-allowed'
+                }`}
+              >
+                {canRunComparison?.() ? 'Run Comparison' : 'Videos must be same length'}
+              </Button>
+            )}
+          </div>
+          {selectedVideos.length === 2 && !canRunComparison?.() && (
+            <div className="mt-2 text-xs text-orange-700">
+              ⚠️ Both videos must have the exact same duration for comparison
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Database className="w-5 h-5 text-blue-600" />
@@ -231,7 +291,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
               >
                 <div className="space-y-2 text-sm text-gray-600">
                   <div className="flex items-center gap-2">
-                    <Video className="w-4 h-4" />
+                    <VideoIcon className="w-4 h-4" />
                     <span>{index.video_count} videos</span>
                   </div>
                   
