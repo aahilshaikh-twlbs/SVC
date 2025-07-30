@@ -32,7 +32,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     setError('');
     
     try {
-      const data = await api.listIndexes();
+      const data = await api.listIndexes(apiKey);
       setIndexes(data);
     } catch (err) {
       setError('Failed to load indexes');
@@ -46,7 +46,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
 
     setCreating(true);
     try {
-      const newIndex = await api.createIndex({ name: newIndexName });
+      const newIndex = await api.createIndex({ name: newIndexName }, apiKey);
       setIndexes(prev => [newIndex, ...prev]);
       setNewIndexName('');
       setShowCreateForm(false);
@@ -61,7 +61,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
     if (!editingName.trim()) return;
 
     try {
-      const updatedIndex = await api.renameIndex(indexId, editingName);
+      const updatedIndex = await api.renameIndex(indexId, editingName, apiKey);
       setIndexes(prev => prev.map(index => 
         index.id === indexId ? updatedIndex : index
       ));
@@ -74,7 +74,7 @@ export function IndexVisualizer({ apiKey, onIndexSelected }: IndexVisualizerProp
 
   const handleDeleteIndex = async (indexId: string) => {
     try {
-      await api.deleteIndex(indexId);
+      await api.deleteIndex(indexId, apiKey);
       setIndexes(prev => prev.filter(index => index.id !== indexId));
       setDeletingIndex(null);
     } catch (err) {

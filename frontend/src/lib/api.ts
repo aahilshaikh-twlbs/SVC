@@ -11,13 +11,20 @@ export class ApiError extends Error {
 
 async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  apiKey?: string
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    headers,
     ...options,
   });
 
@@ -37,7 +44,7 @@ export const api = {
     return apiRequest<ApiKeyConfig>('/validate-key', {
       method: 'POST',
       body: JSON.stringify({ key }),
-    });
+    }, key);
   },
 
   getStoredApiKey: async (): Promise<{ has_stored_key: boolean }> => {
@@ -45,42 +52,42 @@ export const api = {
   },
 
   // Index operations
-  listIndexes: async (): Promise<Index[]> => {
-    return apiRequest<Index[]>('/indexes');
+  listIndexes: async (apiKey: string): Promise<Index[]> => {
+    return apiRequest<Index[]>('/indexes', {}, apiKey);
   },
 
-  createIndex: async (data: CreateIndexData): Promise<Index> => {
+  createIndex: async (data: CreateIndexData, apiKey: string): Promise<Index> => {
     return apiRequest<Index>('/indexes', {
       method: 'POST',
       body: JSON.stringify(data),
-    });
+    }, apiKey);
   },
 
-  renameIndex: async (indexId: string, newName: string): Promise<Index> => {
+  renameIndex: async (indexId: string, newName: string, apiKey: string): Promise<Index> => {
     return apiRequest<Index>(`/indexes/${indexId}`, {
       method: 'PUT',
       body: JSON.stringify({ new_name: newName }),
-    });
+    }, apiKey);
   },
 
-  deleteIndex: async (indexId: string): Promise<{ message: string }> => {
+  deleteIndex: async (indexId: string, apiKey: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/indexes/${indexId}`, {
       method: 'DELETE',
-    });
+    }, apiKey);
   },
 
   // Video operations
-  listVideos: async (indexId: string): Promise<Video[]> => {
-    return apiRequest<Video[]>(`/indexes/${indexId}/videos`);
+  listVideos: async (indexId: string, apiKey: string): Promise<Video[]> => {
+    return apiRequest<Video[]>(`/indexes/${indexId}/videos`, {}, apiKey);
   },
 
-  deleteVideo: async (indexId: string, videoId: string): Promise<{ message: string }> => {
+  deleteVideo: async (indexId: string, videoId: string, apiKey: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/indexes/${indexId}/videos/${videoId}`, {
       method: 'DELETE',
-    });
+    }, apiKey);
   },
 
-  uploadVideo: async (data: UploadVideoData): Promise<{ task_id: string; video_id: string }> => {
+  uploadVideo: async (data: UploadVideoData, apiKey: string): Promise<{ task_id: string; video_id: string }> => {
     const formData = new FormData();
     formData.append('index_id', data.index_id);
     
@@ -91,8 +98,14 @@ export const api = {
       formData.append('url', data.url);
     }
 
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+
     const response = await fetch(`${API_BASE_URL}/upload-video`, {
       method: 'POST',
+      headers,
       body: formData,
     });
 
@@ -104,7 +117,7 @@ export const api = {
   },
 
   // Task status checking
-  checkTaskStatus: async (taskId: string): Promise<{ status: string; video_id?: string }> => {
-    return apiRequest<{ status: string; video_id?: string }>(`/tasks/${taskId}`);
+  checkTaskStatus: async (taskId: string, apiKey: string): Promise<{ status: string; video_id?: string }> => {
+    return apiRequest<{ status: string; video_id?: string }>(`/tasks/${taskId}`, {}, apiKey);
   },
 }; 

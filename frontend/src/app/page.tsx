@@ -15,6 +15,7 @@ export default function LandingPage() {
   const [selectedVideos, setSelectedVideos] = useState<Video[]>([]);
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [allVideos, setAllVideos] = useState<Video[]>([]);
 
   // Check for stored API key on component mount
   useEffect(() => {
@@ -22,9 +23,8 @@ export default function LandingPage() {
       try {
         const result = await api.getStoredApiKey();
         if (result.has_stored_key) {
-          // If there's a stored key, we can skip the API key input
-          // For now, we'll still show the input but could auto-validate
-          setShowApiKeyConfig(false);
+          // User has a stored key, but we need them to re-enter it for security
+          setShowApiKeyConfig(true);
         }
       } catch (error) {
         console.error('Error checking stored API key:', error);
@@ -40,12 +40,12 @@ export default function LandingPage() {
     setApiKey(key);
     setSelectedIndex(null);
     setSelectedVideos([]);
+    setAllVideos([]);
     setShowApiKeyConfig(false);
   };
 
   const handleIndexSelected = (index: Index) => {
     setSelectedIndex(index);
-    setSelectedVideos([]);
   };
 
   const handleVideoSelected = (video: Video) => {
@@ -61,6 +61,20 @@ export default function LandingPage() {
         }
       }
     });
+  };
+
+  const handleVideosLoaded = (videos: Video[]) => {
+    setAllVideos(prev => {
+      // Remove videos from the current index and add new ones
+      const filtered = prev.filter(v => !videos.some(newV => newV.id === v.id));
+      return [...filtered, ...videos];
+    });
+  };
+
+  const canRunComparison = () => {
+    if (selectedVideos.length !== 2) return false;
+    const [video1, video2] = selectedVideos;
+    return video1.system_metadata.duration === video2.system_metadata.duration;
   };
 
   const handleBackToIndexes = () => {
@@ -147,7 +161,7 @@ export default function LandingPage() {
                           key={video.id}
                           className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
                         >
-                          {index + 1}. {video.system_metadata.filename}
+                          {index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)
                         </span>
                       ))}
                     </div>
@@ -155,18 +169,32 @@ export default function LandingPage() {
                   {selectedVideos.length === 2 && (
                     <Button
                       onClick={handleRunComparison}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      disabled={!canRunComparison()}
+                      className={`${
+                        canRunComparison() 
+                          ? 'bg-blue-600 hover:bg-blue-700' 
+                          : 'bg-gray-400 cursor-not-allowed'
+                      }`}
                     >
-                      Run Comparison
+                      {canRunComparison() ? 'Run Comparison' : 'Videos must be same length'}
                     </Button>
                   )}
                 </div>
+                {selectedVideos.length === 2 && !canRunComparison() && (
+                  <div className="mt-2 text-xs text-red-600">
+                    ⚠️ Both videos must have the exact same duration for comparison
+                  </div>
+                )}
               </div>
             )}
 
             <VideoVisualizer
               selectedIndex={selectedIndex}
+              selectedVideos={selectedVideos}
+              allVideos={allVideos}
+              apiKey={apiKey}
               onVideoSelected={handleVideoSelected}
+              onVideosLoaded={handleVideosLoaded}
             />
           </div>
         ) : (

@@ -2,17 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Video, Clock, Upload, Link, FileVideo, Trash2 } from 'lucide-react';
+import { Plus, Video, Clock, Upload, Link, FileVideo, Trash2, Check } from 'lucide-react';
 import { Video as VideoType, Index } from '@/types';
 import { api } from '@/lib/api';
 import { formatDuration, formatFileSize, formatDate } from '@/lib/utils';
 
 interface VideoVisualizerProps {
   selectedIndex: Index;
+  selectedVideos: VideoType[];
+  allVideos: VideoType[];
+  apiKey: string;
   onVideoSelected: (video: VideoType) => void;
+  onVideosLoaded: (videos: VideoType[]) => void;
 }
 
-export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisualizerProps) {
+export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiKey, onVideoSelected, onVideosLoaded }: VideoVisualizerProps) {
   const [videos, setVideos] = useState<VideoType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,8 +37,9 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
     setError('');
     
     try {
-      const data = await api.listVideos(selectedIndex.id);
+      const data = await api.listVideos(selectedIndex.id, apiKey);
       setVideos(data);
+      onVideosLoaded(data);
     } catch (err) {
       setError('Failed to load videos');
     } finally {
@@ -62,7 +67,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
         url: uploadType === 'url' ? uploadUrl : undefined,
       };
 
-      const result = await api.uploadVideo(uploadData);
+      const result = await api.uploadVideo(uploadData, apiKey);
       
       // Reset form
       resetFileInput();
@@ -83,7 +88,7 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
 
   const handleDeleteVideo = async (videoId: string) => {
     try {
-      await api.deleteVideo(selectedIndex.id, videoId);
+      await api.deleteVideo(selectedIndex.id, videoId, apiKey);
       setVideos(prev => prev.filter(video => video.id !== videoId));
       setDeletingVideo(null);
     } catch (err) {
@@ -221,15 +226,28 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {videos.map((video) => (
-          <div
-            key={video.id}
-            className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow"
-          >
+        {videos.map((video) => {
+          const isSelected = selectedVideos.some(selected => selected.id === video.id);
+          return (
+            <div
+              key={video.id}
+              className={`p-4 bg-white border rounded-lg shadow-sm hover:shadow-md transition-all ${
+                isSelected 
+                  ? 'border-blue-500 bg-blue-50 shadow-lg ring-2 ring-blue-200' 
+                  : 'border-gray-200'
+              }`}
+            >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="font-medium text-gray-900 truncate">
-                {video.system_metadata.filename}
-              </h3>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <h3 className="font-medium text-gray-900 truncate">
+                  {video.system_metadata.filename}
+                </h3>
+                {isSelected && (
+                  <div className="flex-shrink-0">
+                    <Check className="w-4 h-4 text-blue-600" />
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
                   {video.id.slice(0, 8)}...
@@ -291,7 +309,8 @@ export function VideoVisualizer({ selectedIndex, onVideoSelected }: VideoVisuali
               )}
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
 
       {/* Delete Confirmation Modal */}

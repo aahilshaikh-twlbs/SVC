@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -48,6 +48,32 @@ init_db()
 # Global variable to store the API key
 current_api_key = None
 tl_client = None
+
+async def get_api_key(request: Request) -> str:
+    """Extract API key from X-API-Key header"""
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        raise HTTPException(status_code=401, detail="X-API-Key header required")
+    return api_key
+
+def get_twelve_labs_client(api_key: str = Depends(get_api_key)):
+    """Get or initialize TwelveLabs client with API key"""
+    global tl_client, current_api_key
+    
+    # If we have a client and it's the same key, return it
+    if tl_client and current_api_key == api_key:
+        return tl_client
+    
+    # Initialize new client
+    try:
+        tl_client = TwelveLabs(api_key=api_key)
+        current_api_key = api_key
+        save_api_key_hash(api_key)  # Save the API key hash
+        logger.info("Successfully initialized TwelveLabs client")
+        return tl_client
+    except Exception as e:
+        logger.error(f"Error initializing TwelveLabs client: {e}")
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
 # Pydantic models
 class IndexModel(BaseModel):
@@ -109,34 +135,32 @@ def hash_api_key(key: str) -> str:
     import hashlib
     return hashlib.sha256(key.encode()).hexdigest()
 
-def save_api_key(key: str):
+def save_api_key_hash(key: str):
     """Save API key hash to database"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    key_hash = hash_api_key(key)
     try:
-        cursor.execute('INSERT OR REPLACE INTO api_keys (key_hash) VALUES (?)', (key_hash,))
+        cursor.execute('INSERT OR REPLACE INTO api_keys (key_hash) VALUES (?)', 
+                      (hash_api_key(key),))
         conn.commit()
     except Exception as e:
-        logger.error(f"Error saving API key: {e}")
+        logger.error(f"Error saving API key hash: {e}")
     finally:
         conn.close()
 
-def get_stored_api_key() -> Optional[str]:
-    """Get the most recently stored API key"""
+def has_stored_api_key() -> bool:
+    """Check if there's a stored API key hash"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT key_hash FROM api_keys ORDER BY created_at DESC LIMIT 1')
+        cursor.execute('SELECT COUNT(*) FROM api_keys')
         result = cursor.fetchone()
-        if result:
-            # For now, we'll return the hash. In a real app, you'd want to encrypt/decrypt
-            return result[0]
+        return result[0] > 0 if result else False
     except Exception as e:
-        logger.error(f"Error retrieving API key: {e}")
+        logger.error(f"Error checking stored API key: {e}")
+        return False
     finally:
         conn.close()
-    return None
 
 def initialize_twelve_labs_client(api_key: str):
     """Initialize the TwelveLabs client with the provided API key"""
@@ -144,7 +168,7 @@ def initialize_twelve_labs_client(api_key: str):
     try:
         tl_client = TwelveLabs(api_key=api_key)
         current_api_key = api_key
-        save_api_key(api_key)  # Save the API key
+        save_api_key_hash(api_key)  # Save the API key hash
         logger.info("Successfully initialized TwelveLabs client")
         return True
     except Exception as e:
@@ -245,16 +269,13 @@ async def validate_api_key(request: ApiKeyValidation):
 
 @app.get("/stored-api-key")
 async def get_stored_key():
-    """Get the stored API key hash"""
-    key_hash = get_stored_api_key()
-    return {"has_stored_key": key_hash is not None}
+    """Check if there's a stored API key hash"""
+    has_key = has_stored_api_key()
+    return {"has_stored_key": has_key}
 
 @app.get("/indexes")
-async def list_indexes():
+async def list_indexes(tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """List all indexes using real TwelveLabs API"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info("Fetching indexes from TwelveLabs...")
         indexes = tl_client.index.list(
@@ -282,11 +303,8 @@ async def list_indexes():
         raise HTTPException(status_code=500, detail=f"Error fetching indexes: {str(e)}")
 
 @app.post("/indexes")
-async def create_index(request: CreateIndexRequest):
+async def create_index(request: CreateIndexRequest, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """Create new index using real TwelveLabs API"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Creating new index: {request.name}")
         models = [
@@ -309,17 +327,17 @@ async def create_index(request: CreateIndexRequest):
         raise HTTPException(status_code=500, detail=f"Error creating index: {str(e)}")
 
 @app.put("/indexes/{index_id}")
-async def rename_index(index_id: str, request: RenameIndexRequest):
+async def rename_index(index_id: str, request: RenameIndexRequest, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """Rename an index"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Renaming index {index_id} to: {request.new_name}")
-        updated_index = tl_client.index.update(
+        tl_client.index.update(
             id=index_id,
             name=request.new_name
         )
+        
+        # Fetch the updated index to return the new data
+        updated_index = tl_client.index.retrieve(id=index_id)
         
         logger.info(f"Successfully renamed index: {index_id}")
         return convert_twelve_labs_index_to_model(updated_index)
@@ -328,11 +346,8 @@ async def rename_index(index_id: str, request: RenameIndexRequest):
         raise HTTPException(status_code=500, detail=f"Error renaming index: {str(e)}")
 
 @app.delete("/indexes/{index_id}")
-async def delete_index(index_id: str):
+async def delete_index(index_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """Delete an index"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Deleting index: {index_id}")
         tl_client.index.delete(id=index_id)
@@ -344,11 +359,8 @@ async def delete_index(index_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting index: {str(e)}")
 
 @app.get("/indexes/{index_id}/videos")
-async def list_videos(index_id: str):
+async def list_videos(index_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """List videos in an index using real TwelveLabs API"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Fetching videos for index: {index_id}")
         videos = tl_client.index.video.list(
@@ -376,11 +388,8 @@ async def list_videos(index_id: str):
         raise HTTPException(status_code=500, detail=f"Error fetching videos: {str(e)}")
 
 @app.delete("/indexes/{index_id}/videos/{video_id}")
-async def delete_video(index_id: str, video_id: str):
+async def delete_video(index_id: str, video_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """Delete a video from an index"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Deleting video {video_id} from index {index_id}")
         tl_client.task.delete(index_id=index_id, id=video_id)
@@ -395,11 +404,10 @@ async def delete_video(index_id: str, video_id: str):
 async def upload_video(
     index_id: str = Form(...),
     file: Optional[UploadFile] = File(None),
-    url: Optional[str] = Form(None)
+    url: Optional[str] = Form(None),
+    tl_client: TwelveLabs = Depends(get_twelve_labs_client)
 ):
     """Upload video using real TwelveLabs API"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
     
     if not file and not url:
         raise HTTPException(status_code=400, detail="Either file or url must be provided")
@@ -438,11 +446,8 @@ async def upload_video(
         raise HTTPException(status_code=500, detail=f"Error uploading video: {str(e)}")
 
 @app.get("/tasks/{task_id}")
-async def check_task_status(task_id: str):
+async def check_task_status(task_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """Check task status using real TwelveLabs API"""
-    if not tl_client:
-        raise HTTPException(status_code=400, detail="API key not initialized")
-    
     try:
         logger.info(f"Checking task status: {task_id}")
         task = tl_client.task.retrieve(task_id)
