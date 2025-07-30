@@ -422,6 +422,7 @@ async def upload_video(
                 content = file.file.read()
                 buffer.write(content)
             
+            logger.info(f"Uploading file: {temp_path}")
             task = tl_client.task.create(
                 index_id=index_id,
                 file=temp_path
@@ -429,10 +430,18 @@ async def upload_video(
         else:
             # Handle YouTube URL
             if "youtube.com" in url or "youtu.be" in url:
-                task = tl_client.task.create(
-                    index_id=index_id,
-                    url=url
-                )
+                logger.info(f"Uploading YouTube URL: {url}")
+                try:
+                    task = tl_client.task.create(
+                        index_id=index_id,
+                        url=url
+                    )
+                except Exception as e:
+                    logger.error(f"YouTube URL upload failed: {str(e)}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="YouTube URL upload failed. TwelveLabs may not support YouTube URLs directly. Please try uploading a video file instead."
+                    )
             else:
                 raise HTTPException(status_code=400, detail="Invalid YouTube URL")
         

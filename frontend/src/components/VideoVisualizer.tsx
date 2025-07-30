@@ -81,7 +81,12 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
       }, 2000);
       
     } catch (err) {
-      setError('Failed to upload video');
+      console.error('Upload error:', err);
+      if (err instanceof Error) {
+        setError(`Failed to upload video: ${err.message}`);
+      } else {
+        setError('Failed to upload video');
+      }
     } finally {
       setUploading(false);
     }
@@ -101,6 +106,23 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
     const file = e.target.files?.[0];
     if (file) {
       setUploadFile(file);
+      
+      // Check video duration if it's a video file
+      if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          const durationInSeconds = video.duration;
+          const maxDuration = 3600; // 60 minutes in seconds
+          
+          if (durationInSeconds > maxDuration) {
+            setError(`Video is too long (${Math.round(durationInSeconds / 60)} minutes). Maximum allowed duration is 60 minutes.`);
+          } else {
+            setError(''); // Clear any previous errors
+          }
+        };
+        video.src = URL.createObjectURL(file);
+      }
     }
   };
 
@@ -167,6 +189,18 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
                 YouTube URL
               </Button>
             </div>
+            
+                    {uploadType === 'url' && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm text-yellow-800">
+                ⚠️ <strong>Supported URLs:</strong> Direct video file links (MP4, MOV, AVI, WebM) from cloud storage or web servers.
+                <br />
+                <strong>Not supported:</strong> YouTube, Vimeo, or streaming platform URLs.
+                <br />
+                For best results, use file upload instead.
+              </p>
+            </div>
+          )}
 
             {uploadType === 'file' ? (
               <div className="space-y-2">
@@ -204,7 +238,7 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, allVideos, apiK
             <div className="flex gap-2">
               <Button
                 onClick={handleUpload}
-                disabled={uploading || (uploadType === 'file' ? !uploadFile : !uploadUrl.trim())}
+                disabled={uploading || (uploadType === 'file' ? !uploadFile : !uploadUrl.trim()) || (uploadFile !== null && error !== '' && error.includes('too long'))}
                 className="flex items-center gap-2"
               >
                 <Upload className="w-4 h-4" />

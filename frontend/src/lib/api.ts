@@ -113,7 +113,8 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new ApiError(`Upload failed: ${response.statusText}`, response.status);
+      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new ApiError(`Upload failed: ${errorData.detail || response.statusText}`, response.status);
     }
 
     return response.json();
