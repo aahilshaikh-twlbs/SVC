@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Database, Video as VideoIcon, Clock, Edit, Trash2, MoreVertical, Check } from 'lucide-react';
+import { Plus, Database, Video as VideoIcon, Clock, MoreVertical } from 'lucide-react';
 import { Index, Video } from '@/types';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
@@ -38,7 +38,7 @@ export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRem
     try {
       const data = await api.listIndexes();
       setIndexes(data);
-    } catch (err) {
+    } catch {
       setError('Failed to load indexes');
     } finally {
       setLoading(false);
@@ -54,7 +54,7 @@ export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRem
       setIndexes(prev => [newIndex, ...prev]);
       setNewIndexName('');
       setShowCreateForm(false);
-    } catch (err) {
+    } catch {
       setError('Failed to create index');
     } finally {
       setCreating(false);
@@ -71,7 +71,7 @@ export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRem
       ));
       setEditingIndex(null);
       setEditingName('');
-    } catch (err) {
+    } catch {
       setError('Failed to rename index');
     }
   };
@@ -81,7 +81,7 @@ export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRem
       await api.deleteIndex(indexId);
       setIndexes(prev => prev.filter(index => index.id !== indexId));
       setDeletingIndex(null);
-    } catch (err) {
+    } catch {
       setError('Failed to delete index');
     }
   };
@@ -91,13 +91,7 @@ export function IndexVisualizer({ apiKey, selectedVideos, onIndexSelected, onRem
     setEditingName(index.name);
   };
 
-  const getSelectedVideosFromIndex = (indexId: string) => {
-    return selectedVideos.filter(video => {
-      // We need to check if this video belongs to this index
-      // For now, we'll show all selected videos, but ideally we'd track which index each video belongs to
-      return true; // This will show all selected videos for now
-    });
-  };
+
 
   if (loading) {
     return (
