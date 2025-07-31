@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Play, Pause, SkipBack, SkipForward, Maximize, Minimize } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface ComparisonDifference {
@@ -33,11 +32,11 @@ interface Video {
   };
   hls?: {
     video_url: string;
-    thumbnail_urls: string[];
+    thumbnail_urls?: string[];
   };
 }
 
-export default function AnalysisPage() {
+function AnalysisPageContent() {
   const searchParams = useSearchParams();
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   const [video1, setVideo1] = useState<Video | null>(null);
@@ -381,5 +380,20 @@ export default function AnalysisPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AnalysisPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-lg text-gray-600">Loading analysis...</p>
+        </div>
+      </div>
+    }>
+      <AnalysisPageContent />
+    </Suspense>
   );
 } 
