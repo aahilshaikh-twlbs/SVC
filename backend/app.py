@@ -149,7 +149,6 @@ class ComparisonResponse(BaseModel):
 
 def hash_api_key(key: str) -> str:
     """Simple hash function for API key storage"""
-    import hashlib
     return hashlib.sha256(key.encode()).hexdigest()
 
 def save_api_key_hash(key: str):

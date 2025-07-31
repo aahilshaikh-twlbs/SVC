@@ -231,11 +231,8 @@ export default function LandingPage() {
             <VideoVisualizer
               selectedIndex={selectedIndex}
               selectedVideos={selectedVideos}
-              allVideos={allVideos}
-              apiKey={apiKey}
               onVideoSelected={handleVideoSelected}
               onVideosLoaded={handleVideosLoaded}
-              onRemoveVideo={handleRemoveVideo}
             />
           </div>
         ) : (

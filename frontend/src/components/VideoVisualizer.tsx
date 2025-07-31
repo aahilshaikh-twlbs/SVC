@@ -11,11 +11,8 @@ import Image from 'next/image';
 interface VideoVisualizerProps {
   selectedIndex: Index;
   selectedVideos: VideoType[];
-  allVideos: VideoType[];
-  apiKey: string;
   onVideoSelected: (video: VideoType) => void;
   onVideosLoaded: (videos: VideoType[]) => void;
-  onRemoveVideo: (videoId: string) => void;
 }
 
 export function VideoVisualizer({ selectedIndex, selectedVideos, onVideoSelected, onVideosLoaded }: VideoVisualizerProps) {
@@ -43,7 +40,7 @@ export function VideoVisualizer({ selectedIndex, selectedVideos, onVideoSelected
     } finally {
       setLoading(false);
     }
-  }, [selectedIndex.id, onVideosLoaded]);
+  }, [selectedIndex.id]);
 
   useEffect(() => {
     loadVideos();
