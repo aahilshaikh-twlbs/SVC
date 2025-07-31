@@ -13,7 +13,6 @@ load_dotenv()
 
 # Initialize clients
 tl_client = TwelveLabs(api_key=os.environ['TWELVELABS_API_KEY'])
-pc = Pinecone(api_key=os.environ['PINECONE_API_KEY'])
 
 def generate_embedding(video_file=None, yt_url=None, engine="Marengo-retrieval-2.7"):
     """

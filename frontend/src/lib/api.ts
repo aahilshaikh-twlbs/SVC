@@ -124,4 +124,28 @@ export const api = {
   checkTaskStatus: async (taskId: string, apiKey?: string): Promise<{ status: string; video_id?: string }> => {
     return apiRequest<{ status: string; video_id?: string }>(`/tasks/${taskId}`, {}, apiKey);
   },
+
+  // Comparison functions
+  compareVideos: async (data: {
+    video1_id: string;
+    video2_id: string;
+    index_id: string;
+    threshold?: number;
+    distance_metric?: string;
+  }, apiKey?: string): Promise<{
+    video1_id: string;
+    video2_id: string;
+    differences: Array<{
+      start_sec: number;
+      end_sec: number;
+      distance: number;
+    }>;
+    total_segments: number;
+    differing_segments: number;
+  }> => {
+    return apiRequest('/compare-videos', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, apiKey);
+  },
 }; 

@@ -107,8 +107,18 @@ export default function LandingPage() {
 
   const handleRunComparison = () => {
     if (selectedVideos.length === 2) {
-      // TODO: Navigate to analysis page with selected videos
-      console.log('Running comparison with:', selectedVideos);
+      // Redirect to analysis page with video IDs
+      const video1Id = selectedVideos[0].id;
+      const video2Id = selectedVideos[1].id;
+      const indexId = selectedIndex?.id;
+      
+      if (!indexId) {
+        alert('No index selected');
+        return;
+      }
+      
+      const analysisUrl = `/analysis?video1=${video1Id}&video2=${video2Id}&index=${indexId}`;
+      window.location.href = analysisUrl;
     }
   };
 

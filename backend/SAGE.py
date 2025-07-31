@@ -265,24 +265,42 @@ def delete_vid():
 
 ###### RETRIEVAL COMMANDS
 def retrieve_embeds():
-    """retrieves embeds based on video id i think
-    
-    This method retrieves embeddings for a specific video embedding task. Ensure the task status is ready before retrieving your embeddings.
-    """
     def print_segments(segments: List[SegmentEmbedding], max_elements: int = 5):
         for segment in segments:
             print(
                 f"  embedding_scope={segment.embedding_scope} embedding_option={segment.embedding_option} start_offset_sec={segment.start_offset_sec} end_offset_sec={segment.end_offset_sec}"
             )
             print(f"  embeddings: {segment.embeddings_float[:max_elements]}")
-    
-    task = tl_client.embed.task.retrieve(embedding_option=["visual-text"])
-    if task.video_embedding is not None and task.video_embedding.segments is not None:
-        print_segments(task.video_embedding.segments)
-def check_if_done(task: EmbeddingsTask):
-    """"
-    This method waits until a video embedding task is completed by periodically checking its status. If you provide a callback function, it calls the function after each status update with the current task object, allowing you to monitor progress."""
-    def on_task_update(task: EmbeddingsTask):
-        print(f"  Status={task.status}")
-    status = task.wait_for_done(sleep_interval=5, callback=on_task_update)
-    print(f"Embedding done: {status}")
+    video = client.index.video.retrieve(index_id="<YOUR_INDEX_ID>", id="<YOUR_VIDEO_ID>", embedding_option=["visual-text", "audio"])
+    print(f"ID: {video.id}")
+    print(f"Created at: {video.created_at}")
+    print(f"Updated at: {video.updated_at}")
+    print(f"Indexed at: {video.indexed_at}")
+    print("System metadata:")
+    print(f"  Filename: {video.system_metadata.filename}")
+    print(f"  Duration: {video.system_metadata.duration}")
+    print(f"  FPS: {video.system_metadata.fps}")
+    print(f"  Width: {video.system_metadata.width}")
+    print(f"  Height: {video.system_metadata.height}")
+    print(f"  Size: {video.system_metadata.size}")
+    if video.user_metadata:
+        print("User metadata:")
+        for key, value in video.user_metadata.items():
+            print(f"{key}: {value}")
+    if video.hls:
+        print("HLS:")
+        print(f"  Video URL: {video.hls.video_url}")
+        print("  Thumbnail URLs:")
+        for url in video.hls.thumbnail_urls or []:
+            print(f"    {url}")
+        print(f"  Status: {video.hls.status}")
+        print(f"  Updated At: {video.hls.updated_at}")
+    if video.source:
+        print("Source:")
+        print(f"  Type: {video.source.type}")
+        print(f"  Name: {video.source.name}")
+        print(f"  URL: {video.source.url}")
+    if video.embedding:
+        print(f"Engine_name={video.embedding.engine_name}")
+        print("Embeddings:")
+        print_segments(video.embedding.video_embedding.segments)

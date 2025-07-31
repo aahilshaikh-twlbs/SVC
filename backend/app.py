@@ -2,13 +2,11 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Dep
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import os
-from datetime import datetime
-import uuid
 import logging
 import sqlite3
 from twelvelabs import TwelveLabs
-from twelvelabs.models.task import Task
+import hashlib
+import numpy as np
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -129,6 +127,25 @@ class CreateIndexRequest(BaseModel):
 
 class RenameIndexRequest(BaseModel):
     new_name: str
+
+class ComparisonRequest(BaseModel):
+    video1_id: str
+    video2_id: str
+    index_id: str
+    threshold: float = 0.03
+    distance_metric: str = "cosine"
+
+class ComparisonResult(BaseModel):
+    start_sec: float
+    end_sec: float
+    distance: float
+
+class ComparisonResponse(BaseModel):
+    video1_id: str
+    video2_id: str
+    differences: List[ComparisonResult]
+    total_segments: int
+    differing_segments: int
 
 def hash_api_key(key: str) -> str:
     """Simple hash function for API key storage"""
@@ -252,6 +269,167 @@ def convert_twelve_labs_video_to_model(tl_video):
     except Exception as e:
         logger.error(f"Error converting video {tl_video.id}: {e}")
         raise
+
+def cosine_distance(v1: np.ndarray, v2: np.ndarray) -> float:
+    """Calculate cosine distance between two vectors"""
+    dot = np.dot(v1, v2)
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        return 1.0
+    similarity = dot / (norm1 * norm2)
+    return 1.0 - similarity
+
+def euclidean_distance(v1: np.ndarray, v2: np.ndarray) -> float:
+    """Calculate euclidean distance between two vectors"""
+    return float(np.linalg.norm(v1 - v2))
+
+def fetch_video_embeddings(tl_client: TwelveLabs, video_id: str, index_id: str) -> List[dict]:
+    """
+    Fetch all segment embeddings for a video from TwelveLabs using video ID and index ID.
+    Based on the SAGE.py retrieve_embeds function.
+    
+    Returns a list of dicts like:
+    [
+      {
+        'start_offset_sec': 0.0,
+        'end_offset_sec': 2.0,
+        'embedding': [float, float, ...]
+      },
+      ...
+    ]
+    sorted by start_offset_sec ascending.
+    """
+    try:
+        logger.info(f"Retrieving embeddings for video {video_id} from index {index_id}")
+        
+        # Try different embedding options to find what's available
+        embedding_options_to_try = [
+            ["visual-text"],
+            ["audio"],
+            ["visual-text", "audio"],
+            []  # No embedding option - just get the video
+        ]
+        
+        video = None
+        segments = []
+        
+        for embedding_option in embedding_options_to_try:
+            try:
+                logger.info(f"Trying embedding option: {embedding_option}")
+                video = tl_client.index.video.retrieve(
+                    index_id=index_id, 
+                    id=video_id, 
+                    embedding_option=embedding_option if embedding_option else None
+                )
+                logger.info(f"Found video: {video.system_metadata.filename}")
+                
+                # Check if video has embeddings
+                if hasattr(video, 'embedding') and video.embedding and video.embedding.video_embedding and video.embedding.video_embedding.segments:
+                    logger.info(f"Found embeddings for video {video_id} with option: {embedding_option}")
+                    
+                    # Get segments from the video embedding
+                    for segment in video.embedding.video_embedding.segments:
+                        seg = {
+                            "start_offset_sec": segment.start_offset_sec,
+                            "end_offset_sec": segment.end_offset_sec,
+                            "embedding": segment.embeddings_float
+                        }
+                        segments.append(seg)
+                    break
+                else:
+                    logger.info(f"No embeddings found with option: {embedding_option}")
+                    
+            except Exception as e:
+                logger.info(f"Failed with embedding option {embedding_option}: {e}")
+                continue
+        
+        if not video:
+            raise HTTPException(status_code=404, detail=f"Could not retrieve video {video_id}")
+        
+        if not segments:
+            raise HTTPException(status_code=404, detail=f"No embeddings found for video {video_id}. Please ensure the video has been processed.")
+        
+        # Sort by start_offset_sec ascending
+        segments.sort(key=lambda s: s["start_offset_sec"])
+        logger.info(f"Retrieved {len(segments)} segments for video {video_id}")
+        return segments
+        
+    except Exception as e:
+        logger.error(f"Error fetching embeddings for video {video_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching embeddings: {str(e)}")
+
+def compare_segments_by_time(
+    segments_v1: List[dict],
+    segments_v2: List[dict],
+    threshold: float = 0.03,
+    distance_metric: str = "cosine"
+) -> List[dict]:
+    """
+    Compare two lists of segment embeddings and identify differences.
+    
+    Returns a list of dicts describing where differences occur:
+    [
+      {
+        "start_sec": 0.0,
+        "end_sec": 2.0,
+        "distance": 0.45
+      },
+      ...
+    ]
+    """
+    # Convert the lists into dictionaries keyed by start_offset_sec
+    def keyfunc(s):
+        return round(s["start_offset_sec"], 2)
+
+    dict_v1 = {keyfunc(seg): seg for seg in segments_v1}
+    dict_v2 = {keyfunc(seg): seg for seg in segments_v2}
+
+    # Combine all possible start times
+    all_keys = set(dict_v1.keys()).union(set(dict_v2.keys()))
+    differing_segments = []
+
+    for k in sorted(all_keys):
+        seg1 = dict_v1.get(k)
+        seg2 = dict_v2.get(k)
+
+        if not seg1 or not seg2:
+            # If one segment is missing, treat it as a difference
+            valid_seg = seg1 if seg1 is not None else seg2
+            if valid_seg:
+                differing_segments.append({
+                    "start_sec": valid_seg["start_offset_sec"],
+                    "end_sec": valid_seg["end_offset_sec"],
+                    "distance": 1.0  # Use maximum distance instead of infinity
+                })
+            continue
+
+        # Convert to numpy for distance calculation
+        v1 = np.array(seg1["embedding"], dtype=np.float32)
+        v2 = np.array(seg2["embedding"], dtype=np.float32)
+
+        if distance_metric == "cosine":
+            dist = cosine_distance(v1, v2)
+        else:
+            dist = euclidean_distance(v1, v2)
+
+        # Cast dist to float to avoid serialization issues
+        dist_val = float(dist)
+        
+        # Handle infinity values for JSON serialization
+        if dist_val == float('inf'):
+            dist_val = 1.0  # Use maximum distance instead of infinity
+        elif dist_val == float('-inf'):
+            dist_val = 0.0  # Use minimum distance instead of negative infinity
+            
+        if dist_val > threshold:
+            differing_segments.append({
+                "start_sec": seg1["start_offset_sec"],
+                "end_sec": seg1["end_offset_sec"],
+                "distance": dist_val
+            })
+
+    return differing_segments
 
 @app.get("/")
 async def root():
@@ -467,6 +645,45 @@ async def check_task_status(task_id: str, tl_client: TwelveLabs = Depends(get_tw
     except Exception as e:
         logger.error(f"Error checking task status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error checking task status: {str(e)}")
+
+@app.post("/compare-videos", response_model=ComparisonResponse)
+async def compare_videos(
+    request: ComparisonRequest,
+    tl_client: TwelveLabs = Depends(get_twelve_labs_client)
+):
+    """
+    Compare two videos and find semantic differences.
+    """
+    try:
+        logger.info(f"Starting comparison between videos {request.video1_id} and {request.video2_id}")
+        
+        # Fetch embeddings for both videos
+        segments_v1 = fetch_video_embeddings(tl_client, request.video1_id, request.index_id)
+        segments_v2 = fetch_video_embeddings(tl_client, request.video2_id, request.index_id)
+        
+        logger.info(f"Retrieved {len(segments_v1)} segments for video 1, {len(segments_v2)} segments for video 2")
+        
+        # Compare segments
+        differing_segments = compare_segments_by_time(
+            segments_v1, 
+            segments_v2, 
+            threshold=request.threshold,
+            distance_metric=request.distance_metric
+        )
+        
+        logger.info(f"Found {len(differing_segments)} differing segments")
+        
+        return ComparisonResponse(
+            video1_id=request.video1_id,
+            video2_id=request.video2_id,
+            differences=[ComparisonResult(**diff) for diff in differing_segments],
+            total_segments=min(len(segments_v1), len(segments_v2)),
+            differing_segments=len(differing_segments)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error comparing videos: {e}")
+        raise HTTPException(status_code=500, detail=f"Error comparing videos: {str(e)}")
 
 @app.get("/debug/raw-videos/{index_id}")
 async def get_raw_videos(index_id: str):
