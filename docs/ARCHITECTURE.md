@@ -1,210 +1,218 @@
-# SAGE - Semantic Analysis via Graph-based Embeddings
+# SAGE - Semantic Video Comparison Architecture
 
-## Project Overview
+## Overview
 
-SAGE is a comprehensive video analysis platform that leverages TwelveLabs API for semantic video comparison and analysis. The application provides a modern web interface for managing video indexes, uploading videos, and performing semantic comparisons.
+SAGE is a streamlined web application for semantic video comparison using TwelveLabs AI. The application allows users to upload videos, generate embeddings, and compare them to identify differences at the segment level.
 
 ## Architecture
 
-### Backend (`backend/`)
+### Technology Stack
 
-#### Core Files:
-- **`app.py`** - FastAPI backend server with SQLite database integration
-- **`SAGE.py`** - Core TwelveLabs functionality and function definitions
-- **`test_api.py`** - API testing script for TwelveLabs integration
-- **`requirements.txt`** - Python dependencies
+#### Backend
+- **FastAPI** - Modern Python web framework
+- **SQLite** - Lightweight database for API key storage
+- **TwelveLabs SDK** - Video embedding generation
+- **NumPy** - Vector operations for similarity calculations
 
-#### Key Features:
-- **API Key Management**: SQLite database for persistent API key storage
-- **Index Management**: Create, list, rename, and delete indexes
-- **Video Management**: Upload, list, and delete videos from indexes
-- **Real-time Processing**: Task status monitoring for video uploads (in progress)
-- **Error Handling**: Comprehensive error handling and logging (in progress)
+#### Frontend  
+- **Next.js 15** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS v3** - Utility-first styling (V3 due to dependency issues with V4)
+- **Bun** - Fast JavaScript runtime and package manager
 
-#### Database Schema:
+## Backend Architecture (`/backend`)
+
+### Core File: `app.py` (269 lines)
+
+The entire backend is contained in a single, focused file that handles:
+
+1. **API Key Management**
+   - Validation endpoint for TwelveLabs API keys
+   - SHA-256 hashing for secure storage
+   - SQLite persistence
+
+2. **Video Processing**
+   - Upload endpoint accepting video files
+   - Temporary file handling for TwelveLabs API
+   - Embedding generation using Marengo-retrieval-2.7 model
+   - In-memory storage for embeddings and video content
+
+3. **Video Comparison**
+   - Segment-by-segment comparison
+   - Cosine and Euclidean distance calculations
+   - Configurable similarity threshold
+   - Real-time comparison results
+
+### API Endpoints
+
+```
+POST /validate-key
+  - Validates TwelveLabs API key
+  - Returns: { key: string, isValid: boolean }
+
+POST /upload-and-generate-embeddings
+  - Accepts video file upload
+  - Generates embeddings via TwelveLabs
+  - Returns: embedding data, video metadata
+
+POST /compare-local-videos
+  - Compares two videos by embedding IDs
+  - Parameters: embedding_id1, embedding_id2, threshold, distance_metric
+  - Returns: differences array with timestamps and distances
+
+GET /serve-video/{video_id}
+  - Serves video content from memory
+  - Returns: video/mp4 stream
+```
+
+### Database Schema
+
 ```sql
 CREATE TABLE api_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key_hash TEXT UNIQUE NOT NULL,
+    api_key TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+)
 ```
 
-#### API Endpoints:
-- `POST /validate-key` - Validate TwelveLabs API key
-- `GET /stored-api-key` - Check for stored API key
-- `GET /indexes` - List all indexes
-- `POST /indexes` - Create new index
-- `PUT /indexes/{index_id}` - Rename index
-- `DELETE /indexes/{index_id}` - Delete index
-- `GET /indexes/{index_id}/videos` - List videos in index
-- `DELETE /indexes/{index_id}/videos/{video_id}` - Delete video
-- `POST /upload-video` - Upload video (file or YouTube URL)
-- `GET /tasks/{task_id}` - Check task status
+### Dependencies (6 total)
+- fastapi==0.104.1
+- uvicorn[standard]==0.24.0
+- python-multipart==0.0.6
+- pydantic==2.5.0
+- twelvelabs==1.0.0
+- numpy==1.24.3
 
-### Frontend (`frontend/`)
+## Frontend Architecture (`/frontend`)
 
-#### Technology Stack:
-- **Next.js 14** - React framework with App Router
-- **TypeScript** - Type-safe development
-- **Tailwind CSS** - Utility-first CSS framework
-- **Lucide React** - Icon library
-- **Radix UI** - Accessible UI primitives
+### Key Components
 
-#### Key Components:
-- **`ApiKeyConfig`** - API key input and validation
-- **`IndexVisualizer`** - Index management with rename/delete
-- **`VideoVisualizer`** - Video management with upload/delete
-- **`Button`** - Reusable UI components
+#### Pages
+- **`/` (page.tsx)** - Video upload and comparison initiation
+- **`/analysis` (analysis/page.tsx)** - Comparison results visualization
 
-#### Features:
-- **Dark Theme**: Custom dark color scheme for better readability
-- **API Key Persistence**: Remembers API key across sessions
-- **Real-time Updates**: Automatic refresh after operations
-- **Error Handling**: User-friendly error messages
-- **Loading States**: Smooth loading indicators
+#### Components
+- **`ApiKeyConfig`** - TwelveLabs API key input with validation
+- **UI Components** - Minimal set: Button, Card, Badge
 
-#### Color Scheme:
-```css
---background: #0f0f0f
---foreground: #ffffff
---card: #1a1a1a
---primary: #3b82f6
---secondary: #374151
---destructive: #ef4444
-```
+#### Libraries (`/lib`)
+- **`api.ts`** - Centralized API client with 3 endpoints
+- **`utils.ts`** - Utility functions (cn for className merging)
 
-## Core Functionality
+#### Types (`/types`)
+- **`index.ts`** - Single type definition: ApiKeyConfig
 
-### Index Management
-- **Create Index**: New indexes with Marengo 2.7 model
-- **List Indexes**: Display all available indexes
-- **Rename Index**: Update index names
-- **Delete Index**: Remove indexes with confirmation
+### Features
 
-### Video Management
-- **Upload Videos**: Support for local files and YouTube URLs
-- **List Videos**: Display videos with thumbnails and metadata
-- **Delete Videos**: Remove videos with confirmation
-- **Video Selection**: Select up to 2 videos for comparison
+1. **Video Upload Interface**
+   - Drag-and-drop or click to upload
+   - Video thumbnail generation
+   - Support for 2 video comparison
+   - Real-time upload progress
 
-### API Integration
-- **TwelveLabs SDK**: Full integration with TwelveLabs API
-- **Real-time Processing**: Task status monitoring
-- **Error Recovery**: Robust error handling
-- **Data Conversion**: Safe conversion between API and UI models
+2. **Analysis Page**
+   - Synchronized video playback
+   - Visual timeline with difference markers
+   - Segment-level difference list
+   - Adjustable similarity threshold
+   - Color-coded severity indicators
 
-## Development Status
+3. **Design System**
+   - TwelveLabs brand colors
+   - Dark/light theme support
+   - Responsive layout
+   - Accessible components
 
-### ✅ Completed
-- [x] Backend API with FastAPI
-- [x] Frontend with Next.js and TypeScript
-- [x] API key validation and persistence
-- [x] Index management (CRUD operations)
-- [x] Video management (CRUD operations)
-- [x] Dark theme implementation
-- [x] YouTube URL upload support
-- [x] Error handling and loading states
-- [x] Real-time task status monitoring
+### Dependencies (7 total)
+- next: 15.4.5
+- react: 19.1.0
+- react-dom: 19.1.0
+- tailwindcss: ^3
+- lucide-react: ^0.534.0
+- clsx: ^2.1.1
+- tailwind-merge: ^3.3.1
 
-### 🚧 In Progress
-- [ ] Semantic comparison logic
-- [ ] Analysis page implementation
-- [ ] Export functionality (PDF/OTIO)
-- [ ] Advanced video processing
+## Data Flow
 
-### 📋 Planned
-- [ ] User authentication
-- [ ] Advanced filtering and search
-- [ ] Batch operations
-- [ ] Performance optimizations
-- [ ] Production deployment
+1. **API Key Setup**
+   - User enters TwelveLabs API key
+   - Frontend validates with backend
+   - Key hash stored in SQLite
+   - Key persisted in localStorage
 
-## File Structure
+2. **Video Upload & Processing**
+   - User selects 2 videos
+   - Videos uploaded to backend
+   - Backend creates TwelveLabs embedding tasks
+   - Embeddings stored in memory
+   - IDs returned to frontend
 
-```
-SAGE/
-├── backend/
-│   ├── app.py              # FastAPI server
-│   ├── SAGE.py             # Core functionality
-│   ├── test_api.py         # API testing
-│   ├── requirements.txt    # Dependencies
-│   ├── sage.db            # SQLite database
-│   └── README.md          # Backend docs
-├── frontend/
-│   ├── src/
-│   │   ├── app/           # Next.js app router
-│   │   ├── components/    # React components
-│   │   ├── lib/          # Utilities and API
-│   │   └── types/        # TypeScript types
-│   ├── package.json       # Dependencies
-│   └── README.md         # Frontend docs
-├── docs/
-│   └── ARCHITECTURE.md   # This file
-└── README.md             # Project overview
-```
+3. **Comparison**
+   - Frontend requests comparison with embedding IDs
+   - Backend calculates segment distances
+   - Results filtered by threshold
+   - Differences returned with timestamps
 
-## Setup Instructions
+4. **Visualization**
+   - Videos served from backend memory
+   - Synchronized playback controls
+   - Timeline shows difference segments
+   - Real-time threshold adjustment
 
-### Backend Setup
+## Design Decisions
+
+### Simplifications
+- **In-memory storage** instead of persistent database for videos/embeddings
+- **Single-file backend** for easier maintenance
+- **Minimal dependencies** for both frontend and backend
+- **No authentication system** - relies on API key only
+
+### Performance Optimizations
+- **Client-side video thumbnail generation**
+- **Efficient vector operations** with NumPy
+- **Streaming video playback** from backend
+- **Real-time comparison** without page reload
+
+### Security Considerations
+- **API key hashing** before storage
+- **CORS middleware** for frontend access
+- **Input validation** with Pydantic
+- **Error handling** with appropriate status codes
+
+## Deployment Considerations
+
+### Development
 ```bash
-cd SAGE/backend
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+# Backend
+cd backend
 python3 app.py
+
+# Frontend  
+cd frontend
+bun install
+bun run dev
 ```
 
-### Frontend Setup
-```bash
-cd SAGE/frontend
-npm install
-npm run dev
-```
+### Production
+- Backend: Deploy with Gunicorn/Uvicorn
+- Frontend: Deploy to Vercel/Netlify
+- Database: Consider PostgreSQL for production
+- Storage: Consider S3 for video storage
+- Caching: Add Redis for embeddings cache
 
-## API Key Configuration
+## Limitations
 
-1. Get your TwelveLabs API key from the dashboard
-2. Enter the key in the frontend
-3. The key is automatically saved and validated
-4. The key persists across browser sessions
+1. **In-memory storage** - Videos/embeddings lost on restart
+2. **Single server** - No horizontal scaling
+3. **2-video limit** - UI designed for pairwise comparison
+4. **No user management** - Single API key for all users
+5. **No persistence** - Comparison results not saved
 
-## Usage
+## Future Enhancements
 
-1. **Configure API Key**: Enter your TwelveLabs API key
-2. **Browse Indexes**: View all your indexes
-3. **Manage Indexes**: Create, rename, or delete indexes
-4. **Upload Videos**: Add videos via file upload or YouTube URL
-5. **Select Videos**: Choose 2 videos for comparison
-6. **Run Analysis**: Perform semantic comparison (coming soon)
-
-## Technical Notes
-
-### TwelveLabs Integration
-- Uses Marengo 2.7 model exclusively
-- Supports visual and audio analysis
-- Real-time task monitoring
-- Robust error handling
-
-### Database
-- SQLite for simplicity
-- API key hashing for security
-- Automatic database initialization
-
-### Frontend
-- Responsive design
-- Dark theme for better UX
-- Type-safe development
-- Accessible UI components
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-[Add your license information here]
+1. **Persistent Storage** - Database for videos and results
+2. **Batch Comparison** - Compare multiple videos
+3. **Export Features** - Download comparison reports
+4. **Advanced Analytics** - Aggregate statistics
+5. **Collaboration** - Share comparison results
