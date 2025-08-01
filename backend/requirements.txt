@@ -4,4 +4,3 @@ python-multipart==0.0.6
 pydantic==2.5.0
 twelvelabs==1.0.0
 numpy==1.24.3
-httpx==0.25.2 

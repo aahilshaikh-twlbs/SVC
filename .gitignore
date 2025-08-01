@@ -7,7 +7,9 @@ __pycache__/
 .venv/
 *.mp4
 *.env
-embeddings/
+test_vids/
+backend/sage.db
+backend/server.log
 
 ############################
 # FRONTEND
