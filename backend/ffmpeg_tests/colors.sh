@@ -22,25 +22,25 @@
 # 6.
     # final output file
 
-#b3d64b - 843
-#954bd6 - 1217
-#d66e4b - 932
-#d64b87 - 1084
-#4b4dd6 - 719
-#000000 - 865
-#808080 - 673
-#4bd6af - 867
+#b3d64b - 422
+#954bd6 - 609
+#d66e4b - 466
+#d64b87 - 542
+#4b4dd6 - 360
+#000000 - 433
+#808080 - 337
+#4bd6af - 434
 
 ffmpeg \
--f lavfi -i color=c=#b3d64b:duration=843:s=1080x720:r=24 \
--f lavfi -i color=c=#954bd6:duration=1217:s=1080x720:r=24 \
--f lavfi -i color=c=#d66e4b:duration=932:s=1080x720:r=24 \
--f lavfi -i color=c=#d64b87:duration=1084:s=1080x720:r=24 \
--f lavfi -i color=c=#4b4dd6:duration=719:s=1080x720:r=24 \
--f lavfi -i color=c=#000000:duration=865:s=1080x720:r=24 \
--f lavfi -i color=c=#808080:duration=673:s=1080x720:r=24 \
--f lavfi -i color=c=#4bd6af:duration=867:s=1080x720:r=24 \
+-f lavfi -i color=c=#b3d64b:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#954bd6:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#d66e4b:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#d64b87:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#4b4dd6:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#000000:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#808080:duration=450:s=1080x720:r=24 \
+-f lavfi -i color=c=#4bd6af:duration=449:s=1080x720:r=24 \
 -filter_complex "[0:v][1:v][2:v][3:v][4:v][5:v][6:v][7:v]concat=n=8:v=1:a=0[out]" \
 -map "[out]" \
 -c:v libx264 \
-ffmpeg_movie_color.mp4
+colors.mp4

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ApiKeyConfig } from '@/components/ApiKeyConfig';
 import { IndexVisualizer } from '@/components/IndexVisualizer';
 import { VideoVisualizer } from '@/components/VideoVisualizer';
@@ -16,6 +16,9 @@ export default function LandingPage() {
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [allVideos, setAllVideos] = useState<Video[]>([]);
+  const [embeddingStatus, setEmbeddingStatus] = useState<{
+    [key: string]: { has_embeddings: boolean; status: string; filename: string };
+  }>({});
 
   // Check for stored API key on component mount
   useEffect(() => {
@@ -80,6 +83,11 @@ export default function LandingPage() {
         }
       }
     });
+
+    // Check embeddings for the selected video
+    if (selectedIndex) {
+      checkVideoEmbeddings(video.id, selectedIndex.id);
+    }
   };
 
   const handleRemoveVideo = (videoId: string) => {
@@ -94,10 +102,46 @@ export default function LandingPage() {
     });
   };
 
+  const checkVideoEmbeddings = useCallback(async (videoId: string, indexId: string) => {
+    try {
+      const result = await api.checkVideoEmbeddings(videoId, indexId);
+      setEmbeddingStatus(prev => ({
+        ...prev,
+        [videoId]: {
+          has_embeddings: result.has_embeddings,
+          status: result.status,
+          filename: result.filename
+        }
+      }));
+      return result.has_embeddings;
+    } catch (error) {
+      console.error('Error checking video embeddings:', error);
+      setEmbeddingStatus(prev => ({
+        ...prev,
+        [videoId]: {
+          has_embeddings: false,
+          status: 'error',
+          filename: videoId
+        }
+      }));
+      return false;
+    }
+  }, []);
+
   const canRunComparison = () => {
     if (selectedVideos.length !== 2) return false;
     const [video1, video2] = selectedVideos;
-    return video1.system_metadata.duration === video2.system_metadata.duration;
+    
+    // Check if videos have same duration
+    if (video1.system_metadata.duration !== video2.system_metadata.duration) return false;
+    
+    // Check if both videos have embeddings ready
+    const video1Status = embeddingStatus[video1.id];
+    const video2Status = embeddingStatus[video2.id];
+    
+    if (!video1Status || !video2Status) return false;
+    
+    return video1Status.has_embeddings && video2Status.has_embeddings;
   };
 
   const handleBackToIndexes = () => {
@@ -189,21 +233,35 @@ export default function LandingPage() {
                       Selected Videos: {selectedVideos.length}/2
                     </span>
                     <div className="flex gap-2">
-                      {selectedVideos.map((video, index) => (
-                        <span
-                          key={video.id}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded flex items-center gap-1"
-                        >
-                          <span>{index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)</span>
-                                              <button
-                      onClick={() => handleRemoveVideo(video.id)}
-                      className="ml-1 text-blue-600 hover:text-blue-800 text-sm font-bold"
-                      title="Remove from selection"
-                    >
-                      ×
-                    </button>
-                        </span>
-                      ))}
+                      {selectedVideos.map((video, index) => {
+                        const videoStatus = embeddingStatus[video.id];
+                        return (
+                          <span
+                            key={video.id}
+                            className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded flex items-center gap-1"
+                          >
+                            <span>{index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)</span>
+                            {videoStatus && (
+                              <span className={`px-1 py-0.5 rounded text-xs ${
+                                videoStatus.has_embeddings 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : videoStatus.status === 'processing'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {videoStatus.has_embeddings ? '✓' : videoStatus.status === 'processing' ? '⏳' : '✗'}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleRemoveVideo(video.id)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 text-sm font-bold"
+                              title="Remove from selection"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                   {selectedVideos.length === 2 && (
@@ -216,13 +274,13 @@ export default function LandingPage() {
                           : 'bg-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      {canRunComparison() ? 'Run Comparison' : 'Videos must be same length'}
+                      {canRunComparison() ? 'Run Comparison' : 'Videos not ready'}
                     </Button>
                   )}
                 </div>
                                     {selectedVideos.length === 2 && !canRunComparison() && (
                       <div className="mt-2 text-xs text-orange-700">
-                        ⚠️ Both videos must have the exact same duration for comparison
+                        ⚠️ Both videos must have the exact same duration and be fully processed for comparison
                       </div>
                     )}
               </div>

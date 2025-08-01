@@ -125,6 +125,21 @@ export const api = {
     return apiRequest<{ status: string; video_id?: string }>(`/tasks/${taskId}`, {}, apiKey);
   },
 
+  // Check if video has embeddings ready
+  checkVideoEmbeddings: async (videoId: string, indexId: string, apiKey?: string): Promise<{
+    video_id: string;
+    index_id: string;
+    has_embeddings: boolean;
+    filename: string;
+    duration: number;
+    status: string;
+    error?: string;
+  }> => {
+    return apiRequest(`/check-video-embeddings/${videoId}?index_id=${indexId}`, {
+      method: 'GET',
+    }, apiKey);
+  },
+
   // Comparison functions
   compareVideos: async (data: {
     video1_id: string;
@@ -147,5 +162,58 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }, apiKey);
+  },
+
+  // Video stream proxy
+  getVideoStream: async (videoId: string, indexId: string, apiKey?: string): Promise<{
+    video_url: string;
+    status: string;
+    filename: string;
+    thumbnail_urls: string[];
+    duration: number;
+    width: number;
+    height: number;
+  }> => {
+    return apiRequest(`/proxy-video/${videoId}?index_id=${indexId}`, {
+      method: 'GET',
+    }, apiKey);
+  },
+
+  // Get video URL with authentication
+  getVideoUrl: async (videoId: string, indexId: string, apiKey?: string): Promise<{
+    video_url: string;
+    api_key: string | null;
+    status: string;
+    filename: string;
+    thumbnail_urls: string[];
+    duration: number;
+    width: number;
+    height: number;
+  }> => {
+    const response = await apiRequest<{
+      video_url: string;
+      api_key: string | null;
+      status: string;
+      filename: string;
+      thumbnail_urls: string[];
+      duration: number;
+      width: number;
+      height: number;
+    }>(`/video-url/${videoId}?index_id=${indexId}`, {
+      method: 'GET',
+    }, apiKey);
+    
+    // Convert relative proxy URL to absolute URL
+    if (response.video_url && response.video_url.startsWith('/')) {
+      response.video_url = `${API_BASE_URL}${response.video_url}`;
+    }
+    
+    return response;
+  },
+
+  // Get proxied video stream URL
+  getVideoStreamUrl: (videoId: string, indexId: string, apiKey?: string): string => {
+    const keyToUse = apiKey || localStorage.getItem('sage_api_key');
+    return `${API_BASE_URL}/video-stream/${videoId}?index_id=${indexId}&api_key=${keyToUse}`;
   },
 }; 

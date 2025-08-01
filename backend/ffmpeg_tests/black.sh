@@ -1,5 +1,5 @@
 ffmpeg \
--f lavfi -i color=c=#000000:duration=7200:s=1080x720:r=30 \
+-f lavfi -i color=c=#000000:duration=3599:s=1080x720:r=30 \
 -c:v libx264 \
 black.mp4
 

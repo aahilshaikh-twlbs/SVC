@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
@@ -7,6 +8,8 @@ import sqlite3
 from twelvelabs import TwelveLabs
 import hashlib
 import numpy as np
+import urllib.parse
+import httpx
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -324,20 +327,39 @@ def fetch_video_embeddings(tl_client: TwelveLabs, video_id: str, index_id: str) 
                 logger.info(f"Found video: {video.system_metadata.filename}")
                 
                 # Check if video has embeddings
-                if hasattr(video, 'embedding') and video.embedding and video.embedding.video_embedding and video.embedding.video_embedding.segments:
-                    logger.info(f"Found embeddings for video {video_id} with option: {embedding_option}")
-                    
-                    # Get segments from the video embedding
-                    for segment in video.embedding.video_embedding.segments:
-                        seg = {
-                            "start_offset_sec": segment.start_offset_sec,
-                            "end_offset_sec": segment.end_offset_sec,
-                            "embedding": segment.embeddings_float
-                        }
-                        segments.append(seg)
-                    break
+                logger.info(f"Checking embeddings for video {video_id} with option: {embedding_option}")
+                logger.info(f"Video object attributes: {dir(video)}")
+                
+                if hasattr(video, 'embedding'):
+                    logger.info(f"Video has embedding attribute: {hasattr(video, 'embedding')}")
+                    if video.embedding:
+                        logger.info(f"Embedding object attributes: {dir(video.embedding)}")
+                        if hasattr(video.embedding, 'video_embedding'):
+                            logger.info(f"Video has video_embedding attribute")
+                            if video.embedding.video_embedding and hasattr(video.embedding.video_embedding, 'segments'):
+                                segment_count = len(video.embedding.video_embedding.segments) if video.embedding.video_embedding.segments else 0
+                                logger.info(f"Found {segment_count} segments for video {video_id} with option: {embedding_option}")
+                                
+                                if segment_count > 0:
+                                    # Get segments from the video embedding
+                                    for segment in video.embedding.video_embedding.segments:
+                                        seg = {
+                                            "start_offset_sec": segment.start_offset_sec,
+                                            "end_offset_sec": segment.end_offset_sec,
+                                            "embedding": segment.embeddings_float
+                                        }
+                                        segments.append(seg)
+                                    break
+                                else:
+                                    logger.info(f"No segments found with option: {embedding_option}")
+                            else:
+                                logger.info(f"No video_embedding.segments attribute found with option: {embedding_option}")
+                        else:
+                            logger.info(f"No video_embedding attribute found with option: {embedding_option}")
+                    else:
+                        logger.info(f"Embedding is None with option: {embedding_option}")
                 else:
-                    logger.info(f"No embeddings found with option: {embedding_option}")
+                    logger.info(f"No embedding attribute found with option: {embedding_option}")
                     
             except Exception as e:
                 logger.info(f"Failed with embedding option {embedding_option}: {e}")
@@ -455,17 +477,56 @@ async def list_indexes(tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
     """List all indexes using real TwelveLabs API"""
     try:
         logger.info("Fetching indexes from TwelveLabs...")
-        indexes = tl_client.index.list(
-            model_family="marengo",
-            sort_by="created_at",
-            sort_option="desc"
-        )
         
-        logger.info(f"Found {len(indexes)} indexes")
+        # Fetch all indexes with pagination
+        all_indexes = []
+        page = 1
+        page_size = 50  # Max page size
+        
+        while True:
+            try:
+                # Fetch indexes page by page
+                indexes_page = tl_client.index.list(
+                    model_family="marengo",
+                    sort_by="created_at",
+                    sort_option="desc",
+                    page=page,
+                    page_size=page_size
+                )
+                
+                # Check if we got a list or a paginated response
+                if hasattr(indexes_page, 'data'):
+                    # Paginated response
+                    page_indexes = indexes_page.data
+                    all_indexes.extend(page_indexes)
+                    
+                    # Check if there are more pages
+                    if hasattr(indexes_page, 'page_info') and indexes_page.page_info.total_page > page:
+                        page += 1
+                        continue
+                    else:
+                        break
+                else:
+                    # Direct list response (no pagination)
+                    all_indexes = indexes_page
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Error fetching page {page}: {e}")
+                # If pagination params not supported, try without them
+                if page == 1:
+                    all_indexes = tl_client.index.list(
+                        model_family="marengo",
+                        sort_by="created_at",
+                        sort_option="desc"
+                    )
+                break
+        
+        logger.info(f"Found {len(all_indexes)} total indexes")
         
         # Convert to our model format
         result = []
-        for index in indexes:
+        for index in all_indexes:
             try:
                 converted_index = convert_twelve_labs_index_to_model(index)
                 result.append(converted_index)
@@ -540,17 +601,56 @@ async def list_videos(index_id: str, tl_client: TwelveLabs = Depends(get_twelve_
     """List videos in an index using real TwelveLabs API"""
     try:
         logger.info(f"Fetching videos for index: {index_id}")
-        videos = tl_client.index.video.list(
-            index_id=index_id,
-            sort_by="created_at",
-            sort_option="desc"
-        )
         
-        logger.info(f"Found {len(videos)} videos")
+        # Fetch all videos with pagination
+        all_videos = []
+        page = 1
+        page_size = 50  # Max page size
+        
+        while True:
+            try:
+                # Fetch videos page by page
+                videos_page = tl_client.index.video.list(
+                    index_id=index_id,
+                    sort_by="created_at",
+                    sort_option="desc",
+                    page=page,
+                    page_size=page_size
+                )
+                
+                # Check if we got a list or a paginated response
+                if hasattr(videos_page, 'data'):
+                    # Paginated response
+                    page_videos = videos_page.data
+                    all_videos.extend(page_videos)
+                    
+                    # Check if there are more pages
+                    if hasattr(videos_page, 'page_info') and videos_page.page_info.total_page > page:
+                        page += 1
+                        continue
+                    else:
+                        break
+                else:
+                    # Direct list response (no pagination)
+                    all_videos = videos_page
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Error fetching page {page}: {e}")
+                # If pagination params not supported, try without them
+                if page == 1:
+                    all_videos = tl_client.index.video.list(
+                        index_id=index_id,
+                        sort_by="created_at",
+                        sort_option="desc"
+                    )
+                break
+        
+        logger.info(f"Found {len(all_videos)} total videos")
         
         # Convert to our model format
         result = []
-        for video in videos:
+        for video in all_videos:
             try:
                 converted_video = convert_twelve_labs_video_to_model(video)
                 result.append(converted_video)
@@ -645,6 +745,93 @@ async def check_task_status(task_id: str, tl_client: TwelveLabs = Depends(get_tw
         logger.error(f"Error checking task status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error checking task status: {str(e)}")
 
+@app.get("/check-video-embeddings/{video_id}")
+async def check_video_embeddings(
+    video_id: str,
+    index_id: str,
+    tl_client: TwelveLabs = Depends(get_twelve_labs_client)
+):
+    """
+    Check if a video has embeddings ready for comparison.
+    """
+    try:
+        logger.info(f"Checking embeddings for video {video_id} in index {index_id}")
+        
+        # Try to get the video with embeddings - try different options
+        video = None
+        embedding_options_to_try = [
+            ["visual-text"],
+            ["audio"], 
+            ["visual-text", "audio"],
+            []  # No embedding option
+        ]
+        
+        for embedding_option in embedding_options_to_try:
+            try:
+                logger.info(f"Trying to retrieve video with embedding option: {embedding_option}")
+                video = tl_client.index.video.retrieve(
+                    index_id=index_id, 
+                    id=video_id,
+                    embedding_option=embedding_option if embedding_option else None
+                )
+                logger.info(f"Successfully retrieved video with option: {embedding_option}")
+                break
+            except Exception as e:
+                logger.info(f"Failed to retrieve video with option {embedding_option}: {e}")
+                continue
+        
+        if not video:
+            raise HTTPException(status_code=404, detail=f"Could not retrieve video {video_id}")
+        
+        # Check if video has embeddings
+        has_embeddings = False
+        
+        # Debug: Log the video object structure
+        logger.info(f"Video object attributes: {dir(video)}")
+        if hasattr(video, 'embedding'):
+            logger.info(f"Video has embedding attribute: {hasattr(video, 'embedding')}")
+            if video.embedding:
+                logger.info(f"Embedding object attributes: {dir(video.embedding)}")
+                if hasattr(video.embedding, 'video_embedding'):
+                    logger.info(f"Video has video_embedding attribute")
+                    if video.embedding.video_embedding and hasattr(video.embedding.video_embedding, 'segments'):
+                        logger.info(f"Segments: {len(video.embedding.video_embedding.segments) if video.embedding.video_embedding.segments else 0}")
+                        has_embeddings = len(video.embedding.video_embedding.segments) > 0
+                    else:
+                        # Try alternative embedding structure
+                        logger.info("No video_embedding attribute, checking for alternative structure")
+                        if hasattr(video.embedding, 'segments'):
+                            logger.info(f"Direct segments: {len(video.embedding.segments) if video.embedding.segments else 0}")
+                            has_embeddings = len(video.embedding.segments) > 0
+                        elif hasattr(video.embedding, 'embeddings'):
+                            logger.info(f"Embeddings: {len(video.embedding.embeddings) if video.embedding.embeddings else 0}")
+                            has_embeddings = len(video.embedding.embeddings) > 0
+                else:
+                    logger.info("Embedding is None - video may not have embeddings yet")
+            else:
+                logger.info("Embedding is None - video may not have embeddings yet")
+        else:
+            logger.info("Video does not have embedding attribute")
+        
+        return {
+            "video_id": video_id,
+            "index_id": index_id,
+            "has_embeddings": has_embeddings,
+            "filename": video.system_metadata.filename,
+            "duration": video.system_metadata.duration,
+            "status": "ready" if has_embeddings else "processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking embeddings for video {video_id}: {e}")
+        return {
+            "video_id": video_id,
+            "index_id": index_id,
+            "has_embeddings": False,
+            "error": str(e),
+            "status": "error"
+        }
+
 @app.post("/compare-videos", response_model=ComparisonResponse)
 async def compare_videos(
     request: ComparisonRequest,
@@ -655,6 +842,22 @@ async def compare_videos(
     """
     try:
         logger.info(f"Starting comparison between videos {request.video1_id} and {request.video2_id}")
+        
+        # Check if both videos have embeddings ready
+        video1_check = await check_video_embeddings(request.video1_id, request.index_id, tl_client)
+        video2_check = await check_video_embeddings(request.video2_id, request.index_id, tl_client)
+        
+        if not video1_check.get("has_embeddings", False):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Video 1 ({video1_check.get('filename', request.video1_id)}) is still processing. Please wait for embeddings to be generated."
+            )
+        
+        if not video2_check.get("has_embeddings", False):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Video 2 ({video2_check.get('filename', request.video2_id)}) is still processing. Please wait for embeddings to be generated."
+            )
         
         # Fetch embeddings for both videos
         segments_v1 = fetch_video_embeddings(tl_client, request.video1_id, request.index_id)
@@ -672,6 +875,10 @@ async def compare_videos(
         
         logger.info(f"Found {len(differing_segments)} differing segments")
         
+        # Log the actual results for debugging
+        logger.info(f"Comparison results: total_segments={min(len(segments_v1), len(segments_v2))}, differing_segments={len(differing_segments)}")
+        logger.info(f"First few differences: {differing_segments[:3] if differing_segments else 'None'}")
+        
         return ComparisonResponse(
             video1_id=request.video1_id,
             video2_id=request.video2_id,
@@ -680,6 +887,9 @@ async def compare_videos(
             differing_segments=len(differing_segments)
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error comparing videos: {e}")
         raise HTTPException(status_code=500, detail=f"Error comparing videos: {str(e)}")
@@ -764,6 +974,192 @@ async def test_connection():
             "status": "error", 
             "message": f"Connection failed: {str(e)}"
         }
+
+@app.get("/proxy-video/{video_id}")
+async def proxy_video(video_id: str, index_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
+    """Proxy video stream to handle CORS and authentication issues"""
+    try:
+        # Get video details
+        video = tl_client.index.video.retrieve(index_id=index_id, id=video_id)
+        
+        if not video.hls or not video.hls.video_url:
+            raise HTTPException(status_code=404, detail="Video stream not available")
+        
+        # Return video info with authentication headers needed
+        return {
+            "video_url": video.hls.video_url,
+            "status": video.hls.status,
+            "filename": video.system_metadata.filename,
+            "thumbnail_urls": video.hls.thumbnail_urls or [],
+            "duration": video.system_metadata.duration,
+            "width": video.system_metadata.width,
+            "height": video.system_metadata.height
+        }
+    except Exception as e:
+        logger.error(f"Error proxying video {video_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get video stream: {str(e)}")
+
+@app.get("/video-stream/{video_id}")
+async def stream_video(
+    video_id: str, 
+    index_id: str = Query(...),
+    path: str = Query(default=""),
+    tl_client: TwelveLabs = Depends(get_twelve_labs_client)
+):
+    """Proxy HLS stream from TwelveLabs with proper CORS headers"""
+    try:
+        # Get the video to find the HLS URL
+        video = tl_client.index.video.retrieve(index_id=index_id, id=video_id)
+        if not video.hls or not video.hls.video_url:
+            raise HTTPException(status_code=404, detail="Video stream not available")
+        
+        base_url = video.hls.video_url
+        
+        # If path is provided, it's a request for a specific segment or playlist
+        if path:
+            # Clean the path to remove any leading slashes
+            path = path.lstrip('/')
+            # Construct the full URL
+            if path.startswith('http'):
+                # Full URL was passed
+                target_url = path
+            else:
+                # Relative path - append to base URL's directory
+                base_parts = base_url.rsplit('/', 1)
+                target_url = f"{base_parts[0]}/{path}"
+        else:
+            target_url = base_url
+        
+        logger.info(f"Proxying HLS request to: {target_url}")
+        
+        # Make request to TwelveLabs CDN with API key
+        headers = {
+            "X-Api-Key": tl_client.api_key,
+            "User-Agent": "Mozilla/5.0 (compatible; HLS Proxy)",
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(target_url, headers=headers, follow_redirects=True)
+            response.raise_for_status()
+            
+            # Determine content type
+            content_type = response.headers.get("content-type", "application/octet-stream")
+            
+            # For m3u8 manifests, we need to rewrite URLs to go through our proxy
+            if "mpegurl" in content_type or target_url.endswith('.m3u8'):
+                content = response.text
+                
+                # Parse base URL for relative path resolution
+                base_url_parts = target_url.rsplit('/', 1)
+                base_path = base_url_parts[0] if len(base_url_parts) > 1 else target_url
+                
+                # Replace relative URLs in the manifest
+                lines = content.split('\n')
+                modified_lines = []
+                
+                for line in lines:
+                    if line and not line.startswith('#'):
+                        # This is a URL line
+                        if line.startswith('http'):
+                            # Absolute URL - encode it as a query param
+                            encoded_url = urllib.parse.quote(line, safe='')
+                            new_url = f"/video-stream/{video_id}?index_id={index_id}&path={encoded_url}"
+                        else:
+                            # Relative URL
+                            new_url = f"/video-stream/{video_id}?index_id={index_id}&path={line}"
+                        modified_lines.append(new_url)
+                    else:
+                        modified_lines.append(line)
+                
+                content = '\n'.join(modified_lines)
+                
+                return Response(
+                    content=content,
+                    media_type="application/x-mpegURL",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, OPTIONS",
+                        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                    }
+                )
+            else:
+                # For .ts segments and other content, pass through as-is
+                return Response(
+                    content=response.content,
+                    media_type=content_type,
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, OPTIONS", 
+                        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                        "Cache-Control": "max-age=3600",
+                    }
+                )
+                
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error streaming video {video_id}: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Upstream error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error streaming video {video_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stream video: {str(e)}")
+
+@app.head("/video-stream/{video_id}")
+async def stream_video_head(
+    video_id: str, 
+    index_id: str = Query(...),
+    path: str = Query(default=""),
+    tl_client: TwelveLabs = Depends(get_twelve_labs_client)
+):
+    """Handle HEAD requests for video streaming"""
+    # Return empty response with appropriate headers
+    return Response(
+        content="",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }
+    )
+
+@app.options("/video-stream/{video_id}")
+async def stream_video_options(video_id: str):
+    """Handle OPTIONS requests for CORS preflight"""
+    return Response(
+        content="",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
+@app.get("/video-url/{video_id}")
+async def get_video_url(video_id: str, index_id: str, tl_client: TwelveLabs = Depends(get_twelve_labs_client)):
+    """Get video URL with authentication headers for direct browser access"""
+    try:
+        # Get video details
+        video = tl_client.index.video.retrieve(index_id=index_id, id=video_id)
+        
+        if not video.hls or not video.hls.video_url:
+            raise HTTPException(status_code=404, detail="Video stream not available")
+        
+        # Return the proxied URL instead of the direct CloudFront URL
+        proxied_url = f"/video-stream/{video_id}?index_id={index_id}"
+        
+        return {
+            "video_url": proxied_url,
+            "api_key": None,  # No longer needed since backend handles auth
+            "status": video.hls.status,
+            "filename": video.system_metadata.filename,
+            "thumbnail_urls": video.hls.thumbnail_urls or [],
+            "duration": video.system_metadata.duration,
+            "width": video.system_metadata.width,
+            "height": video.system_metadata.height
+        }
+    except Exception as e:
+        logger.error(f"Error getting video URL {video_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get video URL: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
