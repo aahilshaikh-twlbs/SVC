@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react';
 import { ApiKeyConfig } from '@/components/ApiKeyConfig';
 import { Button } from '@/components/ui/button';
-import { Settings, Upload, Video, Loader2, X } from 'lucide-react';
+import { Settings, Video, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface LocalVideo {
   id: string;
   file: File;
   thumbnail: string;
-  embeddings?: any;
+  embeddings?: unknown;
 }
 
 export default function LandingPage() {
@@ -159,7 +159,18 @@ export default function LandingPage() {
   if (!apiKey || showApiKeyConfig) {
     return (
       <div className="min-h-screen bg-[#F4F3F3] flex items-center justify-center p-4">
-        <ApiKeyConfig onKeyValidated={handleKeyValidated} />
+        <div className="relative">
+          <ApiKeyConfig onKeyValidated={handleKeyValidated} />
+          {apiKey && (
+            <Button
+              onClick={() => setShowApiKeyConfig(false)}
+              variant="ghost"
+              className="absolute top-4 right-4 text-[#9B9896] hover:text-[#1D1C1B]"
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -186,8 +197,8 @@ export default function LandingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
+      <main className="max-w-6xl mx-auto px-6 py-12">
+        <div className="space-y-10">
           {/* Upload Section */}
           <div className="text-center">
             <h2 className="text-2xl font-bold text-[#1D1C1B] mb-4">
@@ -199,15 +210,16 @@ export default function LandingPage() {
           </div>
 
           {/* Video Upload Area */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {uploadedVideos.map((video, index) => (
               <div key={video.id} className="relative">
-                <div className="bg-white rounded-lg shadow-sm border border-[#D3D1CF] p-4">
-                  <div className="relative">
+                <div className="bg-white rounded-lg shadow-sm border border-[#D3D1CF] p-4 h-full min-h-[300px] flex flex-col">
+                  <div className="relative flex-grow">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={video.thumbnail}
                       alt={`Video ${index + 1}`}
-                      className="w-full h-48 object-cover rounded"
+                      className="w-full h-full object-cover rounded"
                     />
                     <button
                       onClick={() => removeVideo(video.id)}
@@ -216,19 +228,21 @@ export default function LandingPage() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <p className="mt-2 text-sm font-medium truncate text-[#1D1C1B]">{video.file.name}</p>
-                  <p className="text-xs text-[#9B9896]">
-                    Size: {(video.file.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
+                  <div className="mt-3">
+                    <p className="text-sm font-medium truncate text-[#1D1C1B]">{video.file.name}</p>
+                    <p className="text-xs text-[#9B9896]">
+                      Size: {(video.file.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
                 </div>
               </div>
             ))}
 
             {uploadedVideos.length < 2 && (
-              <div className="bg-white rounded-lg shadow-sm border-2 border-dashed border-[#D3D1CF] p-8 flex flex-col items-center justify-center">
-                <Video className="w-12 h-12 text-[#9B9896] mb-4" />
+              <div className="bg-white rounded-lg shadow-sm border-2 border-dashed border-[#D3D1CF] p-8 flex flex-col items-center justify-center min-h-[300px]">
+                <Video className="w-16 h-16 text-[#9B9896] mb-4" />
                 <label className="cursor-pointer">
-                  <span className="text-[#0066FF] hover:text-[#0052CC] font-medium">
+                  <span className="text-[#0066FF] hover:text-[#0052CC] font-medium text-lg">
                     Choose video
                   </span>
                   <input

@@ -31,7 +31,7 @@ export default function AnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [threshold, setThreshold] = useState(0.1);
+  const [threshold, setThreshold] = useState(0.05);
   const [showThresholdSettings, setShowThresholdSettings] = useState(false);
   const [totalSegments, setTotalSegments] = useState(0);
   const video1Ref = useRef<HTMLVideoElement>(null);
@@ -40,6 +40,7 @@ export default function AnalysisPage() {
   const loadComparison = async (video1: VideoData, video2: VideoData, thresholdValue: number) => {
     try {
       setIsLoading(true);
+      setError(null);
       const comparison = await api.compareLocalVideos(
         video1.embedding_id,
         video2.embedding_id,
@@ -50,7 +51,7 @@ export default function AnalysisPage() {
       setTotalSegments(comparison.total_segments);
     } catch (err) {
       console.error('Error loading comparison:', err);
-      setError('Failed to load comparison data');
+      setError('Failed to load comparison data. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -83,7 +84,7 @@ export default function AnalysisPage() {
     };
     
     loadData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleThresholdChange = async () => {
     if (video1Data && video2Data) {
@@ -119,12 +120,17 @@ export default function AnalysisPage() {
     }
   };
 
-  const getSeverityColor = (distance: number) => {
-    if (distance === Infinity) return 'bg-[#EF4444]'; // TL Red
-    if (distance > 0.5) return 'bg-[#FF6B35]'; // TL Orange
-    if (distance > 0.3) return 'bg-[#FBBF24]'; // TL Yellow
-    if (distance > 0.15) return 'bg-[#00CC88]'; // TL Green
-    return 'bg-[#06B6D4]'; // TL Cyan
+  const getSeverityColor = (distance: number, isFullVideo: boolean = false) => {
+    // Special color for full video comparison
+    if (isFullVideo) return 'bg-[#9B9896]'; // Medium grey for overall comparison
+    
+    if (distance === Infinity) return 'bg-[#DC2626]'; // Dark Red for missing segments
+    if (distance > 0.4) return 'bg-[#EF4444]'; // Red for major differences
+    if (distance > 0.3) return 'bg-[#F97316]'; // Orange for significant differences
+    if (distance > 0.2) return 'bg-[#F59E0B]'; // Amber for moderate differences
+    if (distance > 0.1) return 'bg-[#EAB308]'; // Yellow for minor differences
+    if (distance > 0.05) return 'bg-[#84CC16]'; // Lime for very minor differences
+    return 'bg-[#06B6D4]'; // Cyan for minimal differences
   };
 
   const formatTime = (seconds: number) => {
@@ -186,7 +192,7 @@ export default function AnalysisPage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Threshold Settings Modal */}
         {showThresholdSettings && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -238,9 +244,9 @@ export default function AnalysisPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Video Players - Larger */}
           <div className="lg:col-span-3 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-lg p-3 shadow-sm border border-[#D3D1CF]">
-                <h3 className="text-sm font-medium mb-2 text-[#9B9896]">{video1Data.filename}</h3>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-white rounded-lg p-4 shadow-sm border border-[#D3D1CF]">
+                <h3 className="text-sm font-medium mb-3 text-[#9B9896]">{video1Data.filename}</h3>
                 <video
                   ref={video1Ref}
                   src={`${API_BASE_URL}/serve-video/${video1Data.video_id}`}
@@ -249,8 +255,8 @@ export default function AnalysisPage() {
                   controls={false}
                 />
               </div>
-              <div className="bg-white rounded-lg p-3 shadow-sm border border-[#D3D1CF]">
-                <h3 className="text-sm font-medium mb-2 text-[#9B9896]">{video2Data.filename}</h3>
+              <div className="bg-white rounded-lg p-4 shadow-sm border border-[#D3D1CF]">
+                <h3 className="text-sm font-medium mb-3 text-[#9B9896]">{video2Data.filename}</h3>
                 <video
                   ref={video2Ref}
                   src={`${API_BASE_URL}/serve-video/${video2Data.video_id}`}
@@ -261,8 +267,8 @@ export default function AnalysisPage() {
             </div>
 
             {/* Video Controls */}
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-[#D3D1CF]">
-              <div className="flex items-center gap-4 mb-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-[#D3D1CF]">
+              <div className="flex items-center gap-4 mb-3">
                 <Button
                   onClick={handlePlayPause}
                   size="sm"
@@ -270,14 +276,46 @@ export default function AnalysisPage() {
                 >
                   {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </Button>
-                <span className="text-sm text-[#9B9896]">
+                <span className="text-sm font-medium text-[#1D1C1B]">
                   {formatTime(currentTime)} / {formatTime(video1Data.duration)}
                 </span>
               </div>
 
               {/* Timeline with Markers */}
-              <div className="relative">
-                <div className="h-3 bg-[#D3D1CF] rounded-full relative cursor-pointer"
+              <div className="relative space-y-2">
+                {/* Difference visualization bar */}
+                <div className="relative h-8 bg-[#F4F3F3] rounded overflow-hidden">
+                  {differences.map((diff, index) => {
+                    const startPercent = (diff.start_sec / video1Data.duration) * 100;
+                    const widthPercent = ((diff.end_sec - diff.start_sec) / video1Data.duration) * 100;
+                    const isFullVideo = diff.start_sec === 0 && diff.end_sec >= video1Data.duration - 1;
+                    
+                    return (
+                      <div
+                        key={index}
+                        className={`absolute h-full ${getSeverityColor(diff.distance, isFullVideo)} opacity-70 hover:opacity-100 transition-opacity cursor-pointer`}
+                        style={{ 
+                          left: `${startPercent}%`,
+                          width: `${Math.max(1, widthPercent)}%`
+                        }}
+                        title={`${formatTime(diff.start_sec)} - ${formatTime(diff.end_sec)}: Distance ${diff.distance.toFixed(3)}`}
+                        onClick={() => seekToTime(diff.start_sec)}
+                      />
+                    );
+                  })}
+                  
+                  {/* Grid lines for time reference */}
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <div
+                      key={i}
+                      className="absolute top-0 h-full w-px bg-[#D3D1CF] opacity-30"
+                      style={{ left: `${(i + 1) * 20}%` }}
+                    />
+                  ))}
+                </div>
+                
+                {/* Main playback track */}
+                <div className="relative h-3 bg-[#E5E5E5] rounded-full cursor-pointer group"
                      onClick={(e) => {
                        const rect = e.currentTarget.getBoundingClientRect();
                        const percent = (e.clientX - rect.left) / rect.width;
@@ -285,23 +323,27 @@ export default function AnalysisPage() {
                      }}>
                   {/* Progress bar */}
                   <div 
-                    className="absolute h-full bg-[#0066FF] rounded-full transition-all"
+                    className="absolute h-full bg-[#0066FF] rounded-full transition-all duration-100"
                     style={{ width: `${(currentTime / video1Data.duration) * 100}%` }}
                   />
                   
-                  {/* Difference markers */}
-                  {differences.map((diff, index) => (
-                    <div
-                      key={index}
-                      className={`absolute w-1 h-6 -top-1.5 ${getSeverityColor(diff.distance)} cursor-pointer`}
-                      style={{ left: `${(diff.start_sec / video1Data.duration) * 100}%` }}
-                      title={`Difference at ${formatTime(diff.start_sec)} - Distance: ${diff.distance.toFixed(3)}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        seekToTime(diff.start_sec);
-                      }}
-                    />
-                  ))}
+                  {/* Hover indicator */}
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="h-full bg-white/10 rounded-full" />
+                  </div>
+                  
+                  {/* Current time indicator */}
+                  <div 
+                    className="absolute w-5 h-5 bg-white border-[3px] border-[#0066FF] rounded-full -translate-x-1/2 -translate-y-1/2 top-1/2 shadow-lg transition-all duration-100 z-10 hover:scale-110"
+                    style={{ left: `${(currentTime / video1Data.duration) * 100}%` }}
+                  />
+                </div>
+                
+                {/* Time labels */}
+                <div className="flex justify-between text-xs text-[#9B9896] select-none">
+                  <span>0:00</span>
+                  <span>{formatTime(video1Data.duration / 2)}</span>
+                  <span>{formatTime(video1Data.duration)}</span>
                 </div>
               </div>
             </div>
@@ -326,22 +368,33 @@ export default function AnalysisPage() {
                         No significant differences found
                       </p>
                     ) : (
-                      differences.map((diff, index) => (
-                        <div
-                          key={index}
-                          className="p-3 bg-[#F4F3F3] rounded-lg cursor-pointer hover:bg-[#D3D1CF] transition-colors"
-                          onClick={() => seekToTime(diff.start_sec)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">
-                              {formatTime(diff.start_sec)} - {formatTime(diff.end_sec)}
-                            </span>
-                            <Badge className={`${getSeverityColor(diff.distance)} text-white text-xs`}>
-                              {diff.distance === Infinity ? 'Missing' : diff.distance.toFixed(3)}
-                            </Badge>
+                      differences.map((diff, index) => {
+                        const isFullVideo = diff.start_sec === 0 && diff.end_sec >= video1Data.duration - 1;
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                              isFullVideo 
+                                ? 'bg-[#E5E5E5] hover:bg-[#D3D1CF] border border-[#D3D1CF]' 
+                                : 'bg-[#F4F3F3] hover:bg-[#D3D1CF]'
+                            }`}
+                            onClick={() => seekToTime(diff.start_sec)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">
+                                {formatTime(diff.start_sec)} - {formatTime(diff.end_sec)}
+                              </span>
+                              <Badge className={`${getSeverityColor(diff.distance, isFullVideo)} text-white text-xs`}>
+                                {diff.distance === Infinity ? 'Missing' : diff.distance.toFixed(3)}
+                              </Badge>
+                            </div>
+                            {isFullVideo && (
+                              <div className="mt-1 text-xs text-[#9B9896]">Overall comparison</div>
+                            )}
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
 
@@ -354,7 +407,9 @@ export default function AnalysisPage() {
                       </p>
                       <p className="flex justify-between">
                         <span className="text-[#9B9896]">Different segments:</span>
-                        <span className="font-medium">{differences.length}</span>
+                        <span className="font-medium">
+                          {differences.filter(d => !(d.start_sec === 0 && d.end_sec >= (video1Data?.duration || 0) - 1)).length}
+                        </span>
                       </p>
                       <p className="flex justify-between">
                         <span className="text-[#9B9896]">Similarity:</span>

@@ -39,41 +39,50 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 bg-white rounded-lg shadow-sm border border-[#D3D1CF]">
-      <div className="flex items-center gap-2 mb-4">
-        <Key className="w-5 h-5 text-[#0066FF]" />
-        <h2 className="text-xl font-semibold text-[#1D1C1B]">Configure API Key</h2>
+    <div className="w-full max-w-lg mx-auto p-8 bg-white rounded-lg shadow-lg border border-[#D3D1CF]">
+      <div className="flex items-center gap-3 mb-6">
+        <Key className="w-6 h-6 text-[#0066FF]" />
+        <h2 className="text-2xl font-semibold text-[#1D1C1B]">Configure API Key</h2>
       </div>
       
-      <div className="space-y-4">
-        <div className="relative">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your TwelveLabs API key"
-            className="w-full px-3 py-2 border border-[#D3D1CF] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent bg-white text-[#1D1C1B]"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#9B9896] hover:text-[#1D1C1B]"
-          >
-            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
+      <div className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-[#1D1C1B] mb-2">
+            TwelveLabs API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Enter your TwelveLabs API key"
+              className="w-full px-4 py-3 text-base border border-[#D3D1CF] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent bg-white text-[#1D1C1B] pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#9B9896] hover:text-[#1D1C1B] p-1"
+            >
+              {showKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
 
         {error && (
-          <p className="text-[#EF4444] text-sm">{error}</p>
+          <p className="text-[#EF4444] text-sm bg-[#FEE2E2] p-3 rounded-md">{error}</p>
         )}
 
         <Button
           onClick={handleValidateKey}
           disabled={isValidating}
-          className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white disabled:bg-[#D3D1CF] disabled:text-[#9B9896]"
+          className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white disabled:bg-[#D3D1CF] disabled:text-[#9B9896] py-3 text-base font-medium"
         >
           {isValidating ? 'Validating...' : 'Validate & Continue'}
         </Button>
+        
+        <p className="text-xs text-[#9B9896] text-center">
+          Your API key will be stored locally in your browser
+        </p>
       </div>
     </div>
   );

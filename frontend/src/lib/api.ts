@@ -219,7 +219,7 @@ export const api = {
 
   // Upload video and generate embeddings
   uploadAndGenerateEmbeddings: async (formData: FormData, apiKey?: string): Promise<{
-    embeddings: any;
+    embeddings: unknown;
     filename: string;
     duration: number;
     embedding_id: string;
