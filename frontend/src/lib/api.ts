@@ -1,6 +1,6 @@
 import { Index, Video, ApiKeyConfig, UploadVideoData, CreateIndexData } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export class ApiError extends Error {
   constructor(message: string, public status?: number) {
@@ -215,5 +215,56 @@ export const api = {
   getVideoStreamUrl: (videoId: string, indexId: string, apiKey?: string): string => {
     const keyToUse = apiKey || localStorage.getItem('sage_api_key');
     return `${API_BASE_URL}/video-stream/${videoId}?index_id=${indexId}&api_key=${keyToUse}`;
+  },
+
+  // Upload video and generate embeddings
+  uploadAndGenerateEmbeddings: async (formData: FormData, apiKey?: string): Promise<{
+    embeddings: any;
+    filename: string;
+    duration: number;
+    embedding_id: string;
+    video_id: string;
+  }> => {
+    const headers: Record<string, string> = {};
+    const keyToUse = apiKey || localStorage.getItem('sage_api_key');
+    if (keyToUse) {
+      headers['X-API-Key'] = keyToUse;
+    }
+    // Don't set Content-Type for FormData - let browser set it with boundary
+
+    const response = await fetch(`${API_BASE_URL}/upload-and-generate-embeddings`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new ApiError(`Upload failed: ${errorData.detail || response.statusText}`, response.status);
+    }
+
+    return response.json();
+  },
+
+  // Compare local videos
+  compareLocalVideos: async (embeddingId1: string, embeddingId2: string, apiKey?: string): Promise<{
+    filename1: string;
+    filename2: string;
+    differences: Array<{
+      start_sec: number;
+      end_sec: number;
+      distance: number;
+    }>;
+    total_segments: number;
+    differing_segments: number;
+  }> => {
+    const params = new URLSearchParams({
+      embedding_id1: embeddingId1,
+      embedding_id2: embeddingId2
+    });
+    
+    return apiRequest(`/compare-local-videos?${params}`, {
+      method: 'POST',
+    }, apiKey);
   },
 }; 

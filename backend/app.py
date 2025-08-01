@@ -2,14 +2,18 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Dep
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 import sqlite3
 from twelvelabs import TwelveLabs
+from twelvelabs.models.embed import EmbeddingsTask
 import hashlib
 import numpy as np
 import urllib.parse
 import httpx
+import tempfile
+import os
+import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +41,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS api_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key_hash TEXT UNIQUE NOT NULL,
+            api_key TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -159,8 +164,8 @@ def save_api_key_hash(key: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
-        cursor.execute('INSERT OR REPLACE INTO api_keys (key_hash) VALUES (?)', 
-                      (hash_api_key(key),))
+        cursor.execute('INSERT OR REPLACE INTO api_keys (key_hash, api_key) VALUES (?, ?)', 
+                      (hash_api_key(key), None))
         conn.commit()
     except Exception as e:
         logger.error(f"Error saving API key hash: {e}")
@@ -1160,6 +1165,199 @@ async def get_video_url(video_id: str, index_id: str, tl_client: TwelveLabs = De
     except Exception as e:
         logger.error(f"Error getting video URL {video_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get video URL: {str(e)}")
+
+# In-memory storage for temporary embeddings and videos
+embedding_storage: Dict[str, any] = {}
+video_storage: Dict[str, bytes] = {}
+
+@app.post("/upload-and-generate-embeddings")
+async def upload_and_generate_embeddings(
+    file: UploadFile = File(...),
+    tl: TwelveLabs = Depends(get_twelve_labs_client)
+):
+    """Upload a video file and generate embeddings using TwelveLabs"""
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Save uploaded file temporarily for TwelveLabs
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+        
+        # Create embedding task
+        logger.info(f"Creating embedding task for file: {file.filename}")
+        task = tl.embed.task.create(
+            model_name="Marengo-retrieval-2.7",
+            video_file=tmp_file_path,
+            video_clip_length=2,
+            video_embedding_scopes=["clip", "video"]
+        )
+        
+        # Wait for task completion
+        logger.info(f"Waiting for embedding task {task.id} to complete")
+        def on_task_update(task: EmbeddingsTask):
+            logger.info(f"Task {task.id} status: {task.status}")
+        
+        task.wait_for_done(sleep_interval=5, callback=on_task_update)
+        
+        # Retrieve embeddings
+        logger.info(f"Retrieving embeddings for task {task.id}")
+        completed_task = tl.embed.task.retrieve(task.id)
+        
+        # Clean up temporary file
+        os.unlink(tmp_file_path)
+        
+        # Store embeddings and video in memory
+        embedding_id = f"embed_{task.id}"
+        video_id = f"video_{task.id}"
+        
+        # Calculate duration from segments
+        duration = 0
+        if completed_task.video_embedding and completed_task.video_embedding.segments:
+            # Get the end time of the last segment
+            last_segment = completed_task.video_embedding.segments[-1]
+            duration = last_segment.end_offset_sec
+        
+        embedding_storage[embedding_id] = {
+            "filename": file.filename,
+            "embeddings": completed_task.video_embedding,
+            "duration": duration
+        }
+        
+        # Store video content
+        video_storage[video_id] = content
+        
+        return {
+            "embeddings": completed_task.video_embedding,
+            "filename": file.filename,
+            "duration": duration,
+            "embedding_id": embedding_id,
+            "video_id": video_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {e}")
+        if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
+        raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {str(e)}")
+
+@app.post("/compare-local-videos")
+async def compare_local_videos(
+    embedding_id1: str = Query(...),
+    embedding_id2: str = Query(...),
+    threshold: float = Query(0.2),
+    distance_metric: str = Query("cosine")
+):
+    """Compare two videos using their embeddings"""
+    try:
+        # Get embeddings from storage
+        if embedding_id1 not in embedding_storage or embedding_id2 not in embedding_storage:
+            raise HTTPException(status_code=404, detail="Embeddings not found")
+        
+        embed_data1 = embedding_storage[embedding_id1]
+        embed_data2 = embedding_storage[embedding_id2]
+        
+        # Extract segment embeddings
+        segments1 = []
+        segments2 = []
+        
+        if embed_data1["embeddings"] and embed_data1["embeddings"].segments:
+            for seg in embed_data1["embeddings"].segments:
+                segments1.append({
+                    "start_offset_sec": seg.start_offset_sec,
+                    "end_offset_sec": seg.end_offset_sec,
+                    "embedding": seg.embeddings_float
+                })
+        
+        if embed_data2["embeddings"] and embed_data2["embeddings"].segments:
+            for seg in embed_data2["embeddings"].segments:
+                segments2.append({
+                    "start_offset_sec": seg.start_offset_sec,
+                    "end_offset_sec": seg.end_offset_sec,
+                    "embedding": seg.embeddings_float
+                })
+        
+        # Compare segments
+        differences = compare_segments_by_time(segments1, segments2, threshold, distance_metric)
+        
+        return {
+            "filename1": embed_data1["filename"],
+            "filename2": embed_data2["filename"],
+            "differences": differences,
+            "total_segments": len(segments1),
+            "differing_segments": len(differences)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error comparing videos: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compare videos: {str(e)}")
+
+def compare_segments_by_time(segments1, segments2, threshold=0.2, distance_metric="cosine"):
+    """Compare two lists of segment embeddings"""
+    def keyfunc(s):
+        return round(s["start_offset_sec"], 2)
+    
+    dict_v1 = {keyfunc(seg): seg for seg in segments1}
+    dict_v2 = {keyfunc(seg): seg for seg in segments2}
+    
+    all_keys = set(dict_v1.keys()).union(set(dict_v2.keys()))
+    differing_segments = []
+    
+    for k in sorted(all_keys):
+        seg1 = dict_v1.get(k)
+        seg2 = dict_v2.get(k)
+        
+        if not seg1 or not seg2:
+            # One segment missing
+            valid_seg = seg1 if seg1 is not None else seg2
+            differing_segments.append({
+                "start_sec": valid_seg["start_offset_sec"],
+                "end_sec": valid_seg["end_offset_sec"],
+                "distance": float('inf')
+            })
+            continue
+        
+        # Calculate distance
+        v1 = np.array(seg1["embedding"], dtype=np.float32)
+        v2 = np.array(seg2["embedding"], dtype=np.float32)
+        
+        if distance_metric == "cosine":
+            dist = cosine_distance(v1, v2)
+        else:
+            dist = euclidean_distance(v1, v2)
+        
+        if float(dist) > threshold:
+            differing_segments.append({
+                "start_sec": seg1["start_offset_sec"],
+                "end_sec": seg1["end_offset_sec"],
+                "distance": float(dist)
+            })
+    
+    return differing_segments
+
+def cosine_distance(v1, v2):
+    """Calculate cosine distance between two vectors"""
+    dot = np.dot(v1, v2)
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        return 1.0
+    similarity = dot / (norm1 * norm2)
+    return 1.0 - similarity
+
+def euclidean_distance(v1, v2):
+    """Calculate euclidean distance between two vectors"""
+    return float(np.linalg.norm(v1 - v2))
+
+@app.get("/serve-video/{video_id}")
+async def serve_video(video_id: str):
+    """Serve video from memory storage"""
+    if video_id not in video_storage:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    video_content = video_storage[video_id]
+    return Response(content=video_content, media_type="video/mp4")
 
 if __name__ == "__main__":
     import uvicorn

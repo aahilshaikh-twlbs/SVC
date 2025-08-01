@@ -1,49 +1,41 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { ApiKeyConfig } from '@/components/ApiKeyConfig';
-import { IndexVisualizer } from '@/components/IndexVisualizer';
-import { VideoVisualizer } from '@/components/VideoVisualizer';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Settings } from 'lucide-react';
-import { Index, Video } from '@/types';
+import { Settings, Upload, Video, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
+
+interface LocalVideo {
+  id: string;
+  file: File;
+  thumbnail: string;
+  embeddings?: any;
+}
 
 export default function LandingPage() {
   const [apiKey, setApiKey] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState<Index | null>(null);
-  const [selectedVideos, setSelectedVideos] = useState<Video[]>([]);
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [allVideos, setAllVideos] = useState<Video[]>([]);
-  const [embeddingStatus, setEmbeddingStatus] = useState<{
-    [key: string]: { has_embeddings: boolean; status: string; filename: string };
-  }>({});
+  const [uploadedVideos, setUploadedVideos] = useState<LocalVideo[]>([]);
+  const [isGeneratingEmbeddings, setIsGeneratingEmbeddings] = useState(false);
 
   // Check for stored API key on component mount
   useEffect(() => {
     const checkStoredApiKey = async () => {
       try {
-        // Check localStorage for stored API key
         const storedKey = localStorage.getItem('sage_api_key');
         if (storedKey) {
-          // Validate the stored key
           const result = await api.validateApiKey(storedKey);
           if (result.isValid) {
             setApiKey(storedKey);
             setShowApiKeyConfig(false);
           } else {
-            // Invalid key, remove it
             localStorage.removeItem('sage_api_key');
             setShowApiKeyConfig(true);
           }
         } else {
-          // Check backend for stored key
-          const result = await api.getStoredApiKey();
-          if (result.has_stored_key) {
-            // Backend has a key but frontend doesn't, show config
-            setShowApiKeyConfig(true);
-          }
+          setShowApiKeyConfig(true);
         }
       } catch (error) {
         console.error('Error checking stored API key:', error);
@@ -57,112 +49,102 @@ export default function LandingPage() {
 
   const handleKeyValidated = (key: string) => {
     setApiKey(key);
-    // Store the API key in localStorage for persistence
     localStorage.setItem('sage_api_key', key);
-    setSelectedIndex(null);
-    setSelectedVideos([]);
-    setAllVideos([]);
     setShowApiKeyConfig(false);
   };
 
-  const handleIndexSelected = (index: Index) => {
-    setSelectedIndex(index);
-    // Don't clear selected videos - keep them persistent across indexes
-  };
-
-  const handleVideoSelected = (video: Video) => {
-    setSelectedVideos(prev => {
-      const isSelected = prev.find(v => v.id === video.id);
-      if (isSelected) {
-        return prev.filter(v => v.id !== video.id);
-      } else {
-        if (prev.length >= 2) {
-          return [prev[1], video];
-        } else {
-          return [...prev, video];
-        }
-      }
-    });
-
-    // Check embeddings for the selected video
-    if (selectedIndex) {
-      checkVideoEmbeddings(video.id, selectedIndex.id);
-    }
-  };
-
-  const handleRemoveVideo = (videoId: string) => {
-    setSelectedVideos(prev => prev.filter(v => v.id !== videoId));
-  };
-
-  const handleVideosLoaded = (videos: Video[]) => {
-    setAllVideos(prev => {
-      // Remove videos from the current index and add new ones
-      const filtered = prev.filter(v => !videos.some(newV => newV.id === v.id));
-      return [...filtered, ...videos];
+  const generateThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      
+      video.onloadedmetadata = () => {
+        video.currentTime = 1; // Seek to 1 second
+      };
+      
+      video.onseeked = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL());
+      };
+      
+      video.src = URL.createObjectURL(file);
     });
   };
 
-  const checkVideoEmbeddings = useCallback(async (videoId: string, indexId: string) => {
-    try {
-      const result = await api.checkVideoEmbeddings(videoId, indexId);
-      setEmbeddingStatus(prev => ({
-        ...prev,
-        [videoId]: {
-          has_embeddings: result.has_embeddings,
-          status: result.status,
-          filename: result.filename
-        }
-      }));
-      return result.has_embeddings;
-    } catch (error) {
-      console.error('Error checking video embeddings:', error);
-      setEmbeddingStatus(prev => ({
-        ...prev,
-        [videoId]: {
-          has_embeddings: false,
-          status: 'error',
-          filename: videoId
-        }
-      }));
-      return false;
+  const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    if (uploadedVideos.length >= 2) {
+      alert('Maximum 2 videos allowed');
+      return;
     }
-  }, []);
+    
+    const thumbnail = await generateThumbnail(file);
+    const newVideo: LocalVideo = {
+      id: `video-${Date.now()}`,
+      file,
+      thumbnail
+    };
+    
+    setUploadedVideos(prev => [...prev, newVideo]);
+  };
+
+  const removeVideo = (videoId: string) => {
+    setUploadedVideos(prev => prev.filter(v => v.id !== videoId));
+  };
 
   const canRunComparison = () => {
-    if (selectedVideos.length !== 2) return false;
-    const [video1, video2] = selectedVideos;
-    
-    // Check if videos have same duration
-    if (video1.system_metadata.duration !== video2.system_metadata.duration) return false;
-    
-    // Check if both videos have embeddings ready
-    const video1Status = embeddingStatus[video1.id];
-    const video2Status = embeddingStatus[video2.id];
-    
-    if (!video1Status || !video2Status) return false;
-    
-    return video1Status.has_embeddings && video2Status.has_embeddings;
+    return uploadedVideos.length === 2 && !isGeneratingEmbeddings;
   };
 
-  const handleBackToIndexes = () => {
-    setSelectedIndex(null);
-    // Don't clear selected videos - keep them persistent
-  };
-
-  const handleRunComparison = () => {
-    if (selectedVideos.length === 2) {
-      // Redirect to analysis page with video IDs
-      const video1Id = selectedVideos[0].id;
-      const video2Id = selectedVideos[1].id;
-      const indexId = selectedIndex?.id;
+  const handleRunComparison = async () => {
+    if (uploadedVideos.length !== 2) return;
+    
+    setIsGeneratingEmbeddings(true);
+    
+    try {
+      // Upload videos and generate embeddings
+      const formData1 = new FormData();
+      formData1.append('file', uploadedVideos[0].file);
       
-      if (!indexId) {
-        alert('No index selected');
-        return;
-      }
+      const formData2 = new FormData();
+      formData2.append('file', uploadedVideos[1].file);
       
-      const analysisUrl = `/analysis?video1=${video1Id}&video2=${video2Id}&index=${indexId}`;
-      window.location.href = analysisUrl;
+      // Upload and generate embeddings for both videos
+      const [result1, result2] = await Promise.all([
+        api.uploadAndGenerateEmbeddings(formData1),
+        api.uploadAndGenerateEmbeddings(formData2)
+      ]);
+      
+      // Store video data in session storage for analysis page
+      sessionStorage.setItem('video1_data', JSON.stringify({
+        id: uploadedVideos[0].id,
+        filename: uploadedVideos[0].file.name,
+        embedding_id: result1.embedding_id,
+        video_id: result1.video_id,
+        duration: result1.duration
+      }));
+      
+      sessionStorage.setItem('video2_data', JSON.stringify({
+        id: uploadedVideos[1].id,
+        filename: uploadedVideos[1].file.name,
+        embedding_id: result2.embedding_id,
+        video_id: result2.video_id,
+        duration: result2.duration
+      }));
+      
+      // Navigate to analysis page
+      window.location.href = '/analysis';
+    } catch (error) {
+      console.error('Error generating embeddings:', error);
+      alert('Failed to generate embeddings. Please try again.');
+    } finally {
+      setIsGeneratingEmbeddings(false);
     }
   };
 
@@ -174,7 +156,7 @@ export default function LandingPage() {
     );
   }
 
-  if (!apiKey) {
+  if (!apiKey || showApiKeyConfig) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <ApiKeyConfig onKeyValidated={handleKeyValidated} />
@@ -188,20 +170,7 @@ export default function LandingPage() {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-gray-900">SAGE</h1>
-              {selectedIndex && (
-                <Button
-                  onClick={handleBackToIndexes}
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to Indexes
-                </Button>
-              )}
-            </div>
+            <h1 className="text-xl font-semibold text-gray-900">SAGE</h1>
             
             <Button
               onClick={() => setShowApiKeyConfig(true)}
@@ -218,91 +187,87 @@ export default function LandingPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {showApiKeyConfig ? (
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <ApiKeyConfig onKeyValidated={handleKeyValidated} />
+        <div className="space-y-8">
+          {/* Upload Section */}
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Upload Videos for Comparison
+            </h2>
+            <p className="text-gray-600 mb-8">
+              Upload two local videos to compare their content using TwelveLabs embeddings
+            </p>
           </div>
-        ) : selectedIndex ? (
-          <div className="space-y-8">
-            {/* Video Selection Status */}
-            {selectedVideos.length > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-blue-900">
-                      Selected Videos: {selectedVideos.length}/2
-                    </span>
-                    <div className="flex gap-2">
-                      {selectedVideos.map((video, index) => {
-                        const videoStatus = embeddingStatus[video.id];
-                        return (
-                          <span
-                            key={video.id}
-                            className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded flex items-center gap-1"
-                          >
-                            <span>{index + 1}. {video.system_metadata.filename} ({Math.round(video.system_metadata.duration / 60)}min)</span>
-                            {videoStatus && (
-                              <span className={`px-1 py-0.5 rounded text-xs ${
-                                videoStatus.has_embeddings 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : videoStatus.status === 'processing'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                                {videoStatus.has_embeddings ? '✓' : videoStatus.status === 'processing' ? '⏳' : '✗'}
-                              </span>
-                            )}
-                            <button
-                              onClick={() => handleRemoveVideo(video.id)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 text-sm font-bold"
-                              title="Remove from selection"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {selectedVideos.length === 2 && (
-                    <Button
-                      onClick={handleRunComparison}
-                      disabled={!canRunComparison()}
-                      className={`${
-                        canRunComparison() 
-                          ? 'bg-blue-600 hover:bg-blue-700' 
-                          : 'bg-gray-400 cursor-not-allowed'
-                      }`}
+
+          {/* Video Upload Area */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {uploadedVideos.map((video, index) => (
+              <div key={video.id} className="relative">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="relative">
+                    <img
+                      src={video.thumbnail}
+                      alt={`Video ${index + 1}`}
+                      className="w-full h-48 object-cover rounded"
+                    />
+                    <button
+                      onClick={() => removeVideo(video.id)}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                     >
-                      {canRunComparison() ? 'Run Comparison' : 'Videos not ready'}
-                    </Button>
-                  )}
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="mt-2 text-sm font-medium truncate">{video.file.name}</p>
+                  <p className="text-xs text-gray-500">
+                    Size: {(video.file.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
                 </div>
-                                    {selectedVideos.length === 2 && !canRunComparison() && (
-                      <div className="mt-2 text-xs text-orange-700">
-                        ⚠️ Both videos must have the exact same duration and be fully processed for comparison
-                      </div>
-                    )}
+              </div>
+            ))}
+
+            {uploadedVideos.length < 2 && (
+              <div className="bg-white rounded-lg shadow-sm border-2 border-dashed border-gray-300 p-8 flex flex-col items-center justify-center">
+                <Video className="w-12 h-12 text-gray-400 mb-4" />
+                <label className="cursor-pointer">
+                  <span className="text-blue-600 hover:text-blue-700 font-medium">
+                    Choose video
+                  </span>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={handleVideoUpload}
+                    className="hidden"
+                  />
+                </label>
+                <p className="text-sm text-gray-500 mt-2">or drag and drop</p>
               </div>
             )}
-
-            <VideoVisualizer
-              selectedIndex={selectedIndex}
-              selectedVideos={selectedVideos}
-              onVideoSelected={handleVideoSelected}
-              onVideosLoaded={handleVideosLoaded}
-            />
           </div>
-        ) : (
-          <IndexVisualizer
-            apiKey={apiKey}
-            selectedVideos={selectedVideos}
-            onIndexSelected={handleIndexSelected}
-            onRemoveVideo={handleRemoveVideo}
-            onRunComparison={handleRunComparison}
-            canRunComparison={canRunComparison}
-          />
-        )}
+
+          {/* Comparison Button */}
+          <div className="flex justify-center">
+            <Button
+              onClick={handleRunComparison}
+              disabled={!canRunComparison()}
+              className="px-8 py-3"
+            >
+              {isGeneratingEmbeddings ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating Embeddings...
+                </>
+              ) : (
+                'Compare Videos'
+              )}
+            </Button>
+          </div>
+
+          {/* Status Messages */}
+          {uploadedVideos.length === 1 && (
+            <p className="text-center text-gray-600">
+              Please upload one more video to enable comparison
+            </p>
+          )}
+        </div>
       </main>
     </div>
   );
