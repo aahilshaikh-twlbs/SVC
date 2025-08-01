@@ -247,7 +247,7 @@ export const api = {
   },
 
   // Compare local videos
-  compareLocalVideos: async (embeddingId1: string, embeddingId2: string, apiKey?: string): Promise<{
+  compareLocalVideos: async (embeddingId1: string, embeddingId2: string, threshold: number = 0.1, apiKey?: string): Promise<{
     filename1: string;
     filename2: string;
     differences: Array<{
@@ -257,10 +257,12 @@ export const api = {
     }>;
     total_segments: number;
     differing_segments: number;
+    threshold_used: number;
   }> => {
     const params = new URLSearchParams({
       embedding_id1: embeddingId1,
-      embedding_id2: embeddingId2
+      embedding_id2: embeddingId2,
+      threshold: threshold.toString()
     });
     
     return apiRequest(`/compare-local-videos?${params}`, {

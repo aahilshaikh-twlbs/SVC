@@ -39,10 +39,10 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <div className="w-full max-w-md mx-auto p-6 bg-white rounded-lg shadow-sm border border-[#D3D1CF]">
       <div className="flex items-center gap-2 mb-4">
-        <Key className="w-5 h-5 text-blue-600" />
-        <h2 className="text-xl font-semibold text-gray-900">Configure API Key</h2>
+        <Key className="w-5 h-5 text-[#0066FF]" />
+        <h2 className="text-xl font-semibold text-[#1D1C1B]">Configure API Key</h2>
       </div>
       
       <div className="space-y-4">
@@ -52,25 +52,25 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Enter your TwelveLabs API key"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-[#D3D1CF] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent bg-white text-[#1D1C1B]"
           />
           <button
             type="button"
             onClick={() => setShowKey(!showKey)}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#9B9896] hover:text-[#1D1C1B]"
           >
             {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
 
         {error && (
-          <p className="text-red-600 text-sm">{error}</p>
+          <p className="text-[#EF4444] text-sm">{error}</p>
         )}
 
         <Button
           onClick={handleValidateKey}
           disabled={isValidating}
-          className="w-full"
+          className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white disabled:bg-[#D3D1CF] disabled:text-[#9B9896]"
         >
           {isValidating ? 'Validating...' : 'Validate & Continue'}
         </Button>
