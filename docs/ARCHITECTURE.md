@@ -1,8 +1,8 @@
-# SAGE - Semantic Video Comparison Architecture
+# SAGE - Semantic Analysis of Graph-based Embeds Architecture
 
 ## Overview
 
-SAGE is a streamlined web application for semantic video comparison using TwelveLabs AI. The application allows users to upload videos, generate embeddings, and compare them to identify differences at the segment level.
+SAGE is a streamlined web application for semantic analysis of graph-based embeds using TwelveLabs AI. The application allows users to upload videos, generate embeddings, and analyze them to identify differences at the segment level through graph-based representations.
 
 ## Architecture
 
