@@ -1,6 +1,6 @@
 import { ApiKeyConfig } from '@/types';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://143.198.61.27:8000';
 
 export class ApiError extends Error {
   constructor(message: string, public status?: number) {
