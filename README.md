@@ -1,6 +1,6 @@
-# SAGE - Semantic Video Comparison
+# SAGE - Semantic Analysis of Graph-based Embeds
 
-A lightweight web application for comparing videos using TwelveLabs AI embeddings to identify semantic differences.
+A lightweight web application for semantic analysis of graph-based embeds using TwelveLabs AI to identify differences in video content.
 
 ![SAGE Banner](https://img.shields.io/badge/SAGE-Semantic%20Video%20Comparison-blue)
 

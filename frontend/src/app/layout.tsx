@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "SVC - Semantic Video Comparison",
-  description: "Compare videos semantically using TwelveLabs AI",
+  title: "SAGE - Semantic Analysis of Graph-based Embeds",
+  description: "Semantic analysis of graph-based embeds using TwelveLabs AI",
 };
 
 export default function RootLayout({
