@@ -21,7 +21,9 @@ A lightweight web application for comparing videos using TwelveLabs AI embedding
 - Node.js 18+ or Bun
 - TwelveLabs API key ([Get one here](https://twelvelabs.io))
 
-### Backend Setup
+### Local Development
+
+#### Backend Setup
 
 ```bash
 # Navigate to backend
@@ -36,7 +38,7 @@ python app.py
 
 Backend runs at `http://localhost:8000`
 
-### Frontend Setup
+#### Frontend Setup
 
 ```bash
 # Navigate to frontend
@@ -51,6 +53,37 @@ bun run dev
 
 Frontend runs at `http://localhost:3000`
 
+### Production Deployment
+
+#### Backend on Digital Ocean
+
+1. Deploy to a Digital Ocean droplet
+2. Install dependencies and run:
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   python app.py
+   ```
+3. Update CORS in `app.py` to include your frontend URL
+4. Ensure port 8000 is accessible
+
+#### Frontend on Vercel
+
+1. Push code to GitHub
+2. Connect repository to Vercel
+3. Configure Next.js rewrites in `next.config.ts`:
+   ```typescript
+   async rewrites() {
+     return [{
+       source: '/api/:path*',
+       destination: 'http://YOUR_BACKEND_IP:8000/:path*',
+     }];
+   }
+   ```
+4. Deploy automatically on push
+
 ## 📝 Usage
 
 1. **Enter API Key** - Add your TwelveLabs API key when prompted
@@ -62,9 +95,14 @@ Frontend runs at `http://localhost:3000`
 ## 🏗️ Architecture
 
 ### Minimalist Design
-- **Backend**: Single 269-line Python file
-- **Frontend**: Focused React components
+- **Backend**: Single Python file with FastAPI
+- **Frontend**: Focused React components with Next.js
 - **Dependencies**: Only 6 backend + 7 frontend packages
+
+### Production Architecture
+- **Backend**: Digital Ocean droplet (Ubuntu)
+- **Frontend**: Vercel deployment
+- **Communication**: HTTPS proxy via Vercel rewrites (avoids CORS issues)
 
 ### Key Technologies
 - **FastAPI** - High-performance Python API
@@ -95,18 +133,38 @@ SAGE/
 
 ### Environment Variables
 
-Frontend (optional):
+#### Local Development
 ```bash
-# .env.local
+# Frontend .env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+#### Production
+```bash
+# Frontend (Vercel)
+# No env needed if using rewrites
+# OR set NEXT_PUBLIC_API_URL in Vercel dashboard
 ```
 
 ### API Endpoints
 
+- `GET /health` - Health check (server status, uptime)
 - `POST /validate-key` - Validate TwelveLabs API key
 - `POST /upload-and-generate-embeddings` - Process video
 - `POST /compare-local-videos` - Compare embeddings
 - `GET /serve-video/{video_id}` - Stream video
+
+#### Health Endpoint Response
+```json
+{
+  "status": "healthy",
+  "version": "2.0.0",
+  "uptime_seconds": 3600,
+  "uptime": "1:00:00",
+  "timestamp": "2025-08-02T12:00:00Z",
+  "database_status": "healthy",
+  "python_version": "3.12.3"
+}
 
 ## 🎨 UI Features
 
