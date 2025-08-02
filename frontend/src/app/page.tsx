@@ -159,18 +159,11 @@ export default function LandingPage() {
   if (!apiKey || showApiKeyConfig) {
     return (
       <div className="min-h-screen bg-[#F4F3F3] flex items-center justify-center p-4">
-        <div className="relative">
-          <ApiKeyConfig onKeyValidated={handleKeyValidated} />
-          {apiKey && (
-            <Button
-              onClick={() => setShowApiKeyConfig(false)}
-              variant="ghost"
-              className="absolute top-4 right-4 text-[#9B9896] hover:text-[#1D1C1B]"
-            >
-              Cancel
-            </Button>
-          )}
-        </div>
+        <ApiKeyConfig 
+          onKeyValidated={handleKeyValidated}
+          onCancel={() => setShowApiKeyConfig(false)}
+          showCancel={!!apiKey}
+        />
       </div>
     );
   }

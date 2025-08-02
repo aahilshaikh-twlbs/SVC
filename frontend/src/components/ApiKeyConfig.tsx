@@ -7,9 +7,11 @@ import { api } from '@/lib/api';
 
 interface ApiKeyConfigProps {
   onKeyValidated: (key: string) => void;
+  onCancel?: () => void;
+  showCancel?: boolean;
 }
 
-export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
+export function ApiKeyConfig({ onKeyValidated, onCancel, showCancel = false }: ApiKeyConfigProps) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -39,15 +41,25 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
   };
 
   return (
-    <div className="w-full max-w-lg mx-auto p-8 bg-white rounded-lg shadow-lg border border-[#D3D1CF]">
-      <div className="flex items-center gap-3 mb-6">
-        <Key className="w-6 h-6 text-[#0066FF]" />
-        <h2 className="text-2xl font-semibold text-[#1D1C1B]">Configure API Key</h2>
+    <div className="w-full max-w-lg mx-auto p-10 bg-white rounded-lg shadow-lg border border-[#D3D1CF]">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-3">
+          <Key className="w-6 h-6 text-[#0066FF]" />
+          <h2 className="text-2xl font-semibold text-[#1D1C1B]">Configure API Key</h2>
+        </div>
+        {showCancel && onCancel && (
+          <button
+            onClick={onCancel}
+            className="text-[#9B9896] hover:text-[#1D1C1B] text-sm font-medium"
+          >
+            Cancel
+          </button>
+        )}
       </div>
       
-      <div className="space-y-6">
+      <div className="space-y-8">
         <div>
-          <label className="block text-sm font-medium text-[#1D1C1B] mb-2">
+          <label className="block text-sm font-medium text-[#1D1C1B] mb-3">
             TwelveLabs API Key
           </label>
           <div className="relative">
@@ -56,7 +68,7 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter your TwelveLabs API key"
-              className="w-full px-4 py-3 text-base border border-[#D3D1CF] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent bg-white text-[#1D1C1B] pr-12"
+              className="w-full px-4 py-4 text-base border border-[#D3D1CF] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:border-transparent bg-white text-[#1D1C1B] pr-12"
             />
             <button
               type="button"
@@ -75,12 +87,12 @@ export function ApiKeyConfig({ onKeyValidated }: ApiKeyConfigProps) {
         <Button
           onClick={handleValidateKey}
           disabled={isValidating}
-          className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white disabled:bg-[#D3D1CF] disabled:text-[#9B9896] py-3 text-base font-medium"
+          className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white disabled:bg-[#D3D1CF] disabled:text-[#9B9896] py-4 text-base font-medium"
         >
           {isValidating ? 'Validating...' : 'Validate & Continue'}
         </Button>
         
-        <p className="text-xs text-[#9B9896] text-center">
+        <p className="text-sm text-[#9B9896] text-center mt-6">
           Your API key will be stored locally in your browser
         </p>
       </div>
