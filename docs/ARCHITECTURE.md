@@ -46,6 +46,9 @@ The entire backend is contained in a single, focused file that handles:
 ### API Endpoints
 
 ```
+GET /health
+  - Server health check with uptime and status
+
 POST /validate-key
   - Validates TwelveLabs API key
   - Returns: { key: string, isValid: boolean }
@@ -194,9 +197,48 @@ bun install
 bun run dev
 ```
 
-### Production
-- Backend: Deploy with Gunicorn/Uvicorn
-- Frontend: Deploy to Vercel/Netlify
+### Production Deployment
+
+#### Current Setup
+- **Backend**: Digital Ocean droplet running Ubuntu
+  - Python 3.12+ with virtual environment
+  - FastAPI served via Uvicorn on port 8000
+  - CORS configured for frontend domain
+  - Health endpoint at `/health` for monitoring
+  
+- **Frontend**: Vercel deployment
+  - Automatic deployments from GitHub
+  - Next.js rewrites to proxy API calls
+  - Avoids HTTPS/HTTP mixed content issues
+  
+#### Configuration
+1. **Backend CORS** - Update `allow_origins` in `app.py`:
+   ```python
+   allow_origins=[
+       "http://localhost:3000",
+       "https://your-app.vercel.app"
+   ]
+   ```
+
+2. **Frontend Proxy** - Configure `next.config.ts`:
+   ```typescript
+   async rewrites() {
+     return [{
+       source: '/api/:path*',
+       destination: 'http://YOUR_BACKEND_IP:8000/:path*',
+     }];
+   }
+   ```
+
+3. **API URL** - Update `frontend/src/lib/api.ts`:
+   ```typescript
+   export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+   ```
+
+#### Future Production Improvements
+- Use process manager (PM2/systemd) for backend
+- Add SSL certificates for direct HTTPS
+- Deploy with Gunicorn for better performance
 - Database: Consider PostgreSQL for production
 - Storage: Consider S3 for video storage
 - Caching: Add Redis for embeddings cache

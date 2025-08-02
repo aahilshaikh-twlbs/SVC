@@ -11,6 +11,8 @@ import hashlib
 import numpy as np
 import tempfile
 import os
+from datetime import datetime, timezone
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,6 +50,36 @@ current_api_key = None
 tl_client = None
 embedding_storage: Dict[str, Any] = {}
 video_storage: Dict[str, bytes] = {}
+
+# Track server start time
+server_start_time = datetime.now(timezone.utc)
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint that returns server status and basic info"""
+    try:
+        # Check database connection
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        db_status = "healthy"
+    except Exception as e:
+        db_status = "error"
+    
+    # Calculate uptime
+    uptime = datetime.now(timezone.utc) - server_start_time
+    uptime_seconds = int(uptime.total_seconds())
+    
+    return {
+        "status": "healthy",
+        "version": "2.0.0",
+        "uptime_seconds": uptime_seconds,
+        "uptime": str(uptime),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database_status": db_status,
+        "python_version": sys.version.split()[0]
+    }
 
 async def get_api_key(request: Request) -> str:
     api_key = request.headers.get('X-API-Key')
