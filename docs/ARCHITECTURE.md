@@ -1,4 +1,4 @@
-# SAGE - Semantic Analysis of Graph-based Embeds Architecture
+# SAGE - ARCHITECTURE
 
 ## Overview
 

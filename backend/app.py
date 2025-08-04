@@ -54,6 +54,21 @@ video_storage: Dict[str, bytes] = {}
 # Track server start time
 server_start_time = datetime.now(timezone.utc)
 
+@app.get("/")
+async def root():
+    """Root endpoint to handle scanner traffic"""
+    return {"message": "SAGE API", "docs": "/docs"}
+
+@app.get("/robots.txt")
+async def robots():
+    """Robots.txt to control crawlers"""
+    return Response(content="User-agent: *\nDisallow: /", media_type="text/plain")
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Return 204 No Content for favicon requests"""
+    return Response(status_code=204)
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint that returns server status and basic info"""
