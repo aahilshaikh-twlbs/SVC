@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any
 import logging
@@ -14,7 +14,12 @@ import os
 from datetime import datetime, timezone
 import sys
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging with timestamps
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SAGE Backend", version="2.0.0")
@@ -30,6 +35,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware to log all incoming requests with timestamps
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = datetime.now()
+    client_host = request.client.host if request.client else "unknown"
+    
+    # Log suspicious requests
+    path = str(request.url.path)
+    if request.url.query:
+        path += f"?{request.url.query}"
+    
+    # Check for suspicious patterns
+    suspicious_patterns = [
+        "http%3A//", "https%3A//",  # URL encoded URLs
+        "CONNECT",  # CONNECT method abuse
+        ".php", ".asp", ".cgi",  # Common exploit targets
+        "../", "..\\",  # Path traversal attempts
+        "admin", "wp-", "phpmyadmin",  # Common admin panels
+        ".env", ".git", ".config",  # Sensitive files
+    ]
+    
+    is_suspicious = any(pattern in path.lower() or pattern in request.method for pattern in suspicious_patterns)
+    
+    if is_suspicious:
+        logger.warning(f"Suspicious request from {client_host}: {request.method} {path}")
+    
+    # Process the request
+    try:
+        response = await call_next(request)
+        
+        # Calculate response time
+        duration = (datetime.now() - start_time).total_seconds()
+        
+        # Log based on status code
+        if response.status_code == 404:
+            logger.warning(f"{client_host} - {request.method} {path} - 404 Not Found ({duration:.3f}s)")
+        elif response.status_code >= 400:
+            logger.warning(f"{client_host} - {request.method} {path} - {response.status_code} ({duration:.3f}s)")
+        elif response.status_code >= 200 and response.status_code < 300:
+            logger.info(f"{client_host} - {request.method} {path} - {response.status_code} ({duration:.3f}s)")
+        
+        return response
+        
+    except Exception as e:
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.error(f"{client_host} - {request.method} {path} - Error: {str(e)} ({duration:.3f}s)")
+        raise
 
 DB_PATH = "sage.db"
 
@@ -314,6 +367,25 @@ async def serve_video(video_id: str):
         raise HTTPException(status_code=404, detail="Video not found")
     
     return Response(content=video_storage[video_id], media_type="video/mp4")
+
+# Custom 404 handler
+@app.exception_handler(404)
+async def custom_404_handler(request: Request, exc):
+    client_host = request.client.host if request.client else "unknown"
+    path = str(request.url.path)
+    if request.url.query:
+        path += f"?{request.url.query}"
+    
+    logger.warning(f"404 Not Found: {client_host} attempted to access {request.method} {path}")
+    
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not Found",
+            "message": f"The requested resource {path} was not found",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn
