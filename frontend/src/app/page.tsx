@@ -19,6 +19,9 @@ export default function LandingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [uploadedVideos, setUploadedVideos] = useState<LocalVideo[]>([]);
   const [isGeneratingEmbeddings, setIsGeneratingEmbeddings] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
+  const [embeddingProgress, setEmbeddingProgress] = useState<{[key: string]: string}>({});
+  const [error, setError] = useState<string | null>(null);
 
   // Check for stored API key on component mount
   useEffect(() => {
@@ -106,8 +109,13 @@ export default function LandingPage() {
     if (uploadedVideos.length !== 2) return;
     
     setIsGeneratingEmbeddings(true);
+    setError(null);
     
     try {
+      // Reset progress
+      setUploadProgress({});
+      setEmbeddingProgress({});
+      
       // Upload videos and generate embeddings
       const formData1 = new FormData();
       formData1.append('file', uploadedVideos[0].file);
@@ -115,11 +123,35 @@ export default function LandingPage() {
       const formData2 = new FormData();
       formData2.append('file', uploadedVideos[1].file);
       
+      // Track progress for each video
+      setEmbeddingProgress({
+        [uploadedVideos[0].id]: 'Uploading video 1...',
+        [uploadedVideos[1].id]: 'Uploading video 2...'
+      });
+      
       // Upload and generate embeddings for both videos
       const [result1, result2] = await Promise.all([
-        api.uploadAndGenerateEmbeddings(formData1),
-        api.uploadAndGenerateEmbeddings(formData2)
+        api.uploadAndGenerateEmbeddings(formData1).then(result => {
+          setEmbeddingProgress(prev => ({
+            ...prev,
+            [uploadedVideos[0].id]: 'Generating embeddings for video 1...'
+          }));
+          return result;
+        }),
+        api.uploadAndGenerateEmbeddings(formData2).then(result => {
+          setEmbeddingProgress(prev => ({
+            ...prev,
+            [uploadedVideos[1].id]: 'Generating embeddings for video 2...'
+          }));
+          return result;
+        })
       ]);
+      
+      // Update progress
+      setEmbeddingProgress({
+        [uploadedVideos[0].id]: 'Video 1 ready!',
+        [uploadedVideos[1].id]: 'Video 2 ready!'
+      });
       
       // Store video data in session storage for analysis page
       sessionStorage.setItem('video1_data', JSON.stringify({
@@ -142,7 +174,8 @@ export default function LandingPage() {
       window.location.href = '/analysis';
     } catch (error) {
       console.error('Error generating embeddings:', error);
-      alert('Failed to generate embeddings. Please try again.');
+      setError('Failed to process videos. Please try again.');
+      setEmbeddingProgress({});
     } finally {
       setIsGeneratingEmbeddings(false);
     }
@@ -226,13 +259,40 @@ export default function LandingPage() {
                     <p className="text-xs text-[#9B9896]">
                       Size: {(video.file.size / 1024 / 1024).toFixed(2)} MB
                     </p>
+                    {embeddingProgress[video.id] && (
+                      <p className="text-xs text-[#0066FF] mt-1 font-medium">
+                        {embeddingProgress[video.id]}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
 
             {uploadedVideos.length < 2 && (
-              <div className="bg-white rounded-lg shadow-sm border-2 border-dashed border-[#D3D1CF] p-8 flex flex-col items-center justify-center min-h-[300px]">
+              <div 
+                className="bg-white rounded-lg shadow-sm border-2 border-dashed border-[#D3D1CF] p-8 flex flex-col items-center justify-center min-h-[300px] transition-colors"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.add('border-[#0066FF]', 'bg-blue-50');
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove('border-[#0066FF]', 'bg-blue-50');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove('border-[#0066FF]', 'bg-blue-50');
+                  
+                  const files = e.dataTransfer.files;
+                  if (files && files.length > 0 && files[0].type.startsWith('video/')) {
+                    handleVideoUpload({ target: { files } } as any);
+                  }
+                }}
+              >
                 <Video className="w-16 h-16 text-[#9B9896] mb-4" />
                 <label className="cursor-pointer">
                   <span className="text-[#0066FF] hover:text-[#0052CC] font-medium text-lg">
@@ -260,7 +320,9 @@ export default function LandingPage() {
               {isGeneratingEmbeddings ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating Embeddings...
+                  {Object.keys(embeddingProgress).length > 0 
+                    ? 'Processing Videos...' 
+                    : 'Starting...'}
                 </>
               ) : (
                 'Compare Videos'
@@ -269,7 +331,13 @@ export default function LandingPage() {
           </div>
 
           {/* Status Messages */}
-          {uploadedVideos.length === 1 && (
+          {error && (
+            <div className="max-w-4xl mx-auto p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-center text-red-600">{error}</p>
+            </div>
+          )}
+          
+          {uploadedVideos.length === 1 && !error && (
             <p className="text-center text-[#9B9896]">
               Please upload one more video to enable comparison
             </p>
