@@ -46,8 +46,21 @@ The entire backend is contained in a single, focused file that handles:
 ### API Endpoints
 
 ```
+GET /
+  - Root endpoint for bot traffic
+  - Returns: { message: "SAGE API", docs: "/docs" }
+
 GET /health
   - Server health check with uptime and status
+  - Returns: status, version, uptime, database_status, python_version
+
+GET /robots.txt
+  - Controls web crawlers
+  - Returns: "User-agent: *\nDisallow: /"
+
+GET /favicon.ico
+  - Handles browser favicon requests
+  - Returns: 204 No Content (prevents 404 logs)
 
 POST /validate-key
   - Validates TwelveLabs API key
@@ -104,7 +117,30 @@ CREATE TABLE api_keys (
 - **`utils.ts`** - Utility functions (cn for className merging)
 
 #### Types (`/types`)
-- **`index.ts`** - Single type definition: ApiKeyConfig
+- **`index.ts`** - Type definitions including ApiKeyConfig
+
+### Recent UI/UX Improvements
+
+#### Progress Tracking
+- Real-time status updates during video processing
+- Per-video progress indicators showing:
+  - Upload status: "Uploading video X..."
+  - Processing status: "Generating embeddings for video X..."
+  - Completion status: "Video X ready!"
+- Replaced generic spinning animation with informative messages
+
+#### Drag and Drop Enhancement
+- Fixed browser video playback issue on file drop
+- Added event handlers: `onDragOver`, `onDragLeave`, `onDrop`
+- `e.preventDefault()` prevents default browser behavior
+- Visual feedback with blue border during drag operations
+- MIME type validation for video files only
+
+#### Error Handling
+- Non-blocking error display in red alert box
+- Errors clear automatically on retry
+- No page refresh required for recovery
+- Maintains user context and uploaded files
 
 ### Features
 
@@ -205,6 +241,7 @@ bun run dev
   - FastAPI served via Uvicorn on port 8000
   - CORS configured for frontend domain
   - Health endpoint at `/health` for monitoring
+  - Bot traffic handling endpoints (/, /robots.txt, /favicon.ico)
   
 - **Frontend**: Vercel deployment
   - Automatic deployments from GitHub
@@ -235,6 +272,19 @@ bun run dev
    export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
    ```
 
+#### Security & Bot Handling
+- **Bot Traffic Management**
+  - Root endpoint (/) returns API info instead of 404
+  - robots.txt disallows all crawlers
+  - favicon.ico returns 204 to prevent log spam
+  - Reduces noise from internet scanners (e.g., 167.94.138.182, 206.168.34.221)
+  
+- **Common Scanner Requests Handled**
+  - `GET /` - Returns JSON response
+  - `GET /favicon.ico` - Returns 204 No Content
+  - `GET /robots.txt` - Disallows all paths
+  - Prevents 404 spam in logs from automated scanners
+
 #### Future Production Improvements
 - Use process manager (PM2/systemd) for backend
 - Add SSL certificates for direct HTTPS
@@ -242,6 +292,8 @@ bun run dev
 - Database: Consider PostgreSQL for production
 - Storage: Consider S3 for video storage
 - Caching: Add Redis for embeddings cache
+- Rate limiting for API endpoints
+- Fail2ban for repeat offenders
 
 ## Limitations
 

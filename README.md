@@ -7,10 +7,12 @@ A lightweight web application for semantic analysis of graph-based embeds using 
 ## 🎯 Features
 
 - **🔑 Simple Setup** - Just add your TwelveLabs API key
-- **📹 Local Video Upload** - Compare any two MP4 videos
+- **📹 Local Video Upload** - Compare any two MP4 videos with drag-and-drop support
 - **🧠 AI-Powered Analysis** - Uses TwelveLabs Marengo-retrieval-2.7 model
 - **📊 Visual Comparison** - Side-by-side playback with difference timeline
 - **🎚️ Adjustable Threshold** - Fine-tune sensitivity in real-time
+- **📈 Progress Tracking** - Real-time status updates during processing
+- **🛡️ Error Recovery** - Graceful error handling without page refreshes
 - **🎨 Modern UI** - Clean interface with TwelveLabs branding
 
 ## 🚀 Quick Start
@@ -148,7 +150,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ### API Endpoints
 
+- `GET /` - Root endpoint (returns API info)
 - `GET /health` - Health check (server status, uptime)
+- `GET /robots.txt` - Robots file for crawlers
+- `GET /favicon.ico` - Returns 204 No Content (prevents 404 spam)
 - `POST /validate-key` - Validate TwelveLabs API key
 - `POST /upload-and-generate-embeddings` - Process video
 - `POST /compare-local-videos` - Compare embeddings
@@ -169,10 +174,15 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## 🎨 UI Features
 
 ### Upload Page
-- Drag-and-drop video upload
-- Thumbnail preview
+- Drag-and-drop video upload (with browser video playback prevention)
+- Thumbnail preview generation
 - File size display
-- Progress indicators
+- Real-time progress tracking:
+  - "Uploading video X..."
+  - "Generating embeddings for video X..."
+  - "Video X ready!"
+- Error recovery without page refresh
+- Visual feedback during drag operations
 
 ### Analysis Page
 - Synchronized dual video players
