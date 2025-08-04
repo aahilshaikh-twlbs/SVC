@@ -19,7 +19,6 @@ export default function LandingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [uploadedVideos, setUploadedVideos] = useState<LocalVideo[]>([]);
   const [isGeneratingEmbeddings, setIsGeneratingEmbeddings] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [embeddingProgress, setEmbeddingProgress] = useState<{[key: string]: string}>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -113,7 +112,6 @@ export default function LandingPage() {
     
     try {
       // Reset progress
-      setUploadProgress({});
       setEmbeddingProgress({});
       
       // Upload videos and generate embeddings
@@ -289,7 +287,10 @@ export default function LandingPage() {
                   
                   const files = e.dataTransfer.files;
                   if (files && files.length > 0 && files[0].type.startsWith('video/')) {
-                    handleVideoUpload({ target: { files } } as any);
+                    const mockEvent = {
+                      target: { files }
+                    } as React.ChangeEvent<HTMLInputElement>;
+                    handleVideoUpload(mockEvent);
                   }
                 }}
               >
