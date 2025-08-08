@@ -51,7 +51,7 @@ export const api = {
     }, key);
   },
 
-  // Upload video and generate embeddings (supports chunked pipeline)
+  // Upload video and generate embeddings (always chunk to avoid platform limits)
   uploadAndGenerateEmbeddings: async (formData: FormData, apiKey?: string): Promise<{
     embeddings: unknown;
     filename: string;
@@ -66,39 +66,25 @@ export const api = {
     const keyToUse = apiKey || localStorage.getItem('sage_api_key');
     if (keyToUse) headers['X-API-Key'] = keyToUse;
 
-    if (shouldChunkFile(file)) {
-      const startRes = await fetch(`${API_BASE_URL}/upload/start`, { method: 'POST', headers });
-      if (!startRes.ok) throw new ApiError('Failed to start upload session', startRes.status);
-      const { session_id } = await startRes.json();
+    // Always use chunk flow to stay under Vercel limits
+    const startRes = await fetch(`${API_BASE_URL}/upload/start`, { method: 'POST', headers });
+    if (!startRes.ok) throw new ApiError('Failed to start upload session', startRes.status);
+    const { session_id } = await startRes.json();
 
-      const cf = chunkFile(file);
-      for (const c of cf.chunks) {
-        const chunkFd = buildChunkFormData(session_id, c, cf.totalChunks);
-        const r = await fetch(`${API_BASE_URL}/upload/chunk`, { method: 'POST', headers, body: chunkFd });
-        if (!r.ok) throw new ApiError('Chunk upload failed', r.status);
-      }
-
-      const finalizeFd = new FormData();
-      finalizeFd.append('session_id', session_id);
-      finalizeFd.append('original_filename', file.name);
-      finalizeFd.append('total_chunks', String(cf.totalChunks));
-      const fin = await fetch(`${API_BASE_URL}/upload/finalize`, { method: 'POST', headers, body: finalizeFd });
-      if (!fin.ok) throw new ApiError('Finalize failed', fin.status);
-      return fin.json();
+    const cf = chunkFile(file);
+    for (const c of cf.chunks) {
+      const chunkFd = buildChunkFormData(session_id, c, cf.totalChunks);
+      const r = await fetch(`${API_BASE_URL}/upload/chunk`, { method: 'POST', headers, body: chunkFd });
+      if (!r.ok) throw new ApiError('Chunk upload failed', r.status);
     }
 
-    const response = await fetch(`${API_BASE_URL}/upload-and-generate-embeddings`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new ApiError(`Upload failed: ${errorData.detail || response.statusText}`, response.status);
-    }
-
-    return response.json();
+    const finalizeFd = new FormData();
+    finalizeFd.append('session_id', session_id);
+    finalizeFd.append('original_filename', file.name);
+    finalizeFd.append('total_chunks', String(cf.totalChunks));
+    const fin = await fetch(`${API_BASE_URL}/upload/finalize`, { method: 'POST', headers, body: finalizeFd });
+    if (!fin.ok) throw new ApiError('Finalize failed', fin.status);
+    return fin.json();
   },
 
   // Compare local videos
