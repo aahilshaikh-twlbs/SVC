@@ -10,6 +10,8 @@ __pycache__/
 test_vids/
 *.db
 backend/server.log
+backend/uploads
+backend/videos
 
 ############################
 # FRONTEND
