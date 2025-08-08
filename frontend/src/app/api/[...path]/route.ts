@@ -1,3 +1,5 @@
+import { NextRequest } from 'next/server';
+
 const backendUrl = () => process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 function passthroughHeaders(headers: Headers): HeadersInit {
@@ -10,7 +12,7 @@ function passthroughHeaders(headers: Headers): HeadersInit {
   return h;
 }
 
-async function getBody(req: Request): Promise<BodyInit | undefined> {
+async function getBody(req: NextRequest): Promise<BodyInit | undefined> {
   const ct = req.headers.get('content-type') || '';
   if (ct.includes('multipart/form-data')) {
     const form = await req.formData();
@@ -35,31 +37,39 @@ async function proxy(res: Response) {
   return new Response(buf, init);
 }
 
-export async function GET(req: Request, { params }: { params: { path: string[] } }) {
-  const search = new URL(req.url).search || '';
+type RouteContext = {
+  params: Promise<{ path: string[] }>
+}
+
+export async function GET(req: NextRequest, context: RouteContext) {
+  const params = await context.params;
+  const search = req.nextUrl.search || '';
   const target = `${backendUrl()}/${(params?.path || []).join('/')}${search}`;
   const res = await fetch(target, { method: 'GET', headers: passthroughHeaders(req.headers), cache: 'no-store' });
   return proxy(res);
 }
 
-export async function POST(req: Request, { params }: { params: { path: string[] } }) {
-  const search = new URL(req.url).search || '';
+export async function POST(req: NextRequest, context: RouteContext) {
+  const params = await context.params;
+  const search = req.nextUrl.search || '';
   const target = `${backendUrl()}/${(params?.path || []).join('/')}${search}`;
   const body = await getBody(req);
   const res = await fetch(target, { method: 'POST', headers: passthroughHeaders(req.headers), body });
   return proxy(res);
 }
 
-export async function PUT(req: Request, { params }: { params: { path: string[] } }) {
-  const search = new URL(req.url).search || '';
+export async function PUT(req: NextRequest, context: RouteContext) {
+  const params = await context.params;
+  const search = req.nextUrl.search || '';
   const target = `${backendUrl()}/${(params?.path || []).join('/')}${search}`;
   const body = await getBody(req);
   const res = await fetch(target, { method: 'PUT', headers: passthroughHeaders(req.headers), body });
   return proxy(res);
 }
 
-export async function DELETE(req: Request, { params }: { params: { path: string[] } }) {
-  const search = new URL(req.url).search || '';
+export async function DELETE(req: NextRequest, context: RouteContext) {
+  const params = await context.params;
+  const search = req.nextUrl.search || '';
   const target = `${backendUrl()}/${(params?.path || []).join('/')}${search}`;
   const res = await fetch(target, { method: 'DELETE', headers: passthroughHeaders(req.headers) });
   return proxy(res);
