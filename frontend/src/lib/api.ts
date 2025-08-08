@@ -1,5 +1,5 @@
 import { ApiKeyConfig } from '@/types';
-import { shouldChunkFile, chunkFile, buildChunkFormData } from './fileChunker';
+import { chunkFile, buildChunkFormData } from './fileChunker';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
