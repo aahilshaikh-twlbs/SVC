@@ -98,8 +98,14 @@ video_path_storage: Dict[str, str] = {}
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 VIDEOS_DIR = BASE_DIR / "videos"
-UPLOADS_DIR.mkdir(exist_ok=True)
-VIDEOS_DIR.mkdir(exist_ok=True)
+
+# Clean up on startup
+import shutil
+for dir_path in [UPLOADS_DIR, VIDEOS_DIR]:
+    if dir_path.exists():
+        shutil.rmtree(dir_path)
+        logger.info(f"Cleaned up {dir_path}")
+    dir_path.mkdir(exist_ok=True)
 
 MAX_EMBED_DURATION_SEC = 7200  # 2 hours
 MAX_EMBED_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
@@ -371,6 +377,8 @@ async def finalize_upload(
     combined_path = str(session_root / "combined.mp4")
     try:
         concat_chunks_to_file(chunks_dir, Path(combined_path), int(total_chunks))
+        combined_size_mb = os.path.getsize(combined_path) / (1024 * 1024)
+        logger.info(f"Combined video size: {combined_size_mb:.1f}MB")
     except HTTPException:
         raise
     except Exception as e:
@@ -389,18 +397,26 @@ async def finalize_upload(
         part_start_offset = sum(run_ffprobe_duration_seconds(p) or 0.0 for p in parts[:idx])
         part_offsets.append(part_start_offset)
         logger.info(f"Creating embedding task for part {idx+1}/{len(parts)}: {part_path}")
-        task = tl.embed.task.create(
-            model_name="Marengo-retrieval-2.7",
-            video_file=part_path,
-            video_clip_length=2,
-            video_embedding_scopes=["clip", "video"],
-        )
+        part_size_mb = os.path.getsize(part_path) / (1024 * 1024)
+        logger.info(f"Part size: {part_size_mb:.1f}MB")
+        
+        try:
+            task = tl.embed.task.create(
+                model_name="Marengo-retrieval-2.7",
+                video_file=part_path,
+                video_clip_length=2,
+                video_embedding_scopes=["clip", "video"],
+            )
 
-        def on_task_update(t: EmbeddingsTask):  # type: ignore
-            logger.info(f"Task {t.id} status: {t.status}")
+            def on_task_update(t: EmbeddingsTask):  # type: ignore
+                logger.info(f"Task {t.id} status: {t.status}")
 
-        task.wait_for_done(sleep_interval=5, callback=on_task_update)
-        completed_task = tl.embed.task.retrieve(task.id)
+            task.wait_for_done(sleep_interval=5, callback=on_task_update)
+            completed_task = tl.embed.task.retrieve(task.id)
+        except Exception as e:
+            logger.error(f"TwelveLabs API error: {str(e)}")
+            # If TwelveLabs is down, clean up and return error
+            raise HTTPException(status_code=503, detail=f"TwelveLabs API unavailable: {str(e)}")
 
         part_duration = 0.0
         if completed_task.video_embedding and completed_task.video_embedding.segments:

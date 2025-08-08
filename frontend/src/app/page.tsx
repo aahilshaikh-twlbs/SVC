@@ -127,23 +127,20 @@ export default function LandingPage() {
         [uploadedVideos[1].id]: 'Uploading video 2...'
       });
       
-      // Upload and generate embeddings for both videos
-      const [result1, result2] = await Promise.all([
-        api.uploadAndGenerateEmbeddings(formData1).then(result => {
-          setEmbeddingProgress(prev => ({
-            ...prev,
-            [uploadedVideos[0].id]: 'Generating embeddings for video 1...'
-          }));
-          return result;
-        }),
-        api.uploadAndGenerateEmbeddings(formData2).then(result => {
-          setEmbeddingProgress(prev => ({
-            ...prev,
-            [uploadedVideos[1].id]: 'Generating embeddings for video 2...'
-          }));
-          return result;
-        })
-      ]);
+      // Upload videos SEQUENTIALLY to avoid concurrent processing
+      setEmbeddingProgress({
+        [uploadedVideos[0].id]: 'Uploading video 1...',
+        [uploadedVideos[1].id]: 'Waiting for video 1 to complete...'
+      });
+      
+      const result1 = await api.uploadAndGenerateEmbeddings(formData1);
+      
+      setEmbeddingProgress({
+        [uploadedVideos[0].id]: 'Video 1 complete!',
+        [uploadedVideos[1].id]: 'Uploading video 2...'
+      });
+      
+      const result2 = await api.uploadAndGenerateEmbeddings(formData2);
       
       // Update progress
       setEmbeddingProgress({

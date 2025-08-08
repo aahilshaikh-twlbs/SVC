@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
-const backendUrl = () => process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+// Hardcoded backend URL since env vars aren't working
+const backendUrl = () => 'http://209.38.142.207:8000';
 
 function passthroughHeaders(headers: Headers): HeadersInit {
   const h: Record<string, string> = {};
