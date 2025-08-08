@@ -8,7 +8,7 @@ __pycache__/
 *.mp4
 *.env
 test_vids/
-backend/sage.db
+*.db
 backend/server.log
 
 ############################

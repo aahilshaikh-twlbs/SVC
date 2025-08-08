@@ -1,4 +1,5 @@
 import { ApiKeyConfig } from '@/types';
+import { shouldChunkFile, chunkFile, buildChunkFormData } from './fileChunker';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -50,7 +51,7 @@ export const api = {
     }, key);
   },
 
-  // Upload video and generate embeddings
+  // Upload video and generate embeddings (supports chunked pipeline)
   uploadAndGenerateEmbeddings: async (formData: FormData, apiKey?: string): Promise<{
     embeddings: unknown;
     filename: string;
@@ -58,12 +59,33 @@ export const api = {
     embedding_id: string;
     video_id: string;
   }> => {
+    const file = formData.get('file') as File;
+    if (!file) throw new Error('file missing');
+
     const headers: Record<string, string> = {};
     const keyToUse = apiKey || localStorage.getItem('sage_api_key');
-    if (keyToUse) {
-      headers['X-API-Key'] = keyToUse;
+    if (keyToUse) headers['X-API-Key'] = keyToUse;
+
+    if (shouldChunkFile(file)) {
+      const startRes = await fetch(`${API_BASE_URL}/upload/start`, { method: 'POST', headers });
+      if (!startRes.ok) throw new ApiError('Failed to start upload session', startRes.status);
+      const { session_id } = await startRes.json();
+
+      const cf = chunkFile(file);
+      for (const c of cf.chunks) {
+        const chunkFd = buildChunkFormData(session_id, c, cf.totalChunks);
+        const r = await fetch(`${API_BASE_URL}/upload/chunk`, { method: 'POST', headers, body: chunkFd });
+        if (!r.ok) throw new ApiError('Chunk upload failed', r.status);
+      }
+
+      const finalizeFd = new FormData();
+      finalizeFd.append('session_id', session_id);
+      finalizeFd.append('original_filename', file.name);
+      finalizeFd.append('total_chunks', String(cf.totalChunks));
+      const fin = await fetch(`${API_BASE_URL}/upload/finalize`, { method: 'POST', headers, body: finalizeFd });
+      if (!fin.ok) throw new ApiError('Finalize failed', fin.status);
+      return fin.json();
     }
-    // Don't set Content-Type for FormData - let browser set it with boundary
 
     const response = await fetch(`${API_BASE_URL}/upload-and-generate-embeddings`, {
       method: 'POST',

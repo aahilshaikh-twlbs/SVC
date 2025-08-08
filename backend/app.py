@@ -1,8 +1,7 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends, Query
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends, Query, Form
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import logging
 import sqlite3
 from twelvelabs import TwelveLabs
@@ -13,6 +12,9 @@ import tempfile
 import os
 from datetime import datetime, timezone
 import sys
+import uuid
+from pathlib import Path
+import subprocess
 
 # Configure logging with timestamps
 logging.basicConfig(
@@ -23,18 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SAGE Backend", version="2.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://tl-sage.vercel.app",
-        "http://209.38.142.207:8000"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Middleware to log all incoming requests with timestamps
 @app.middleware("http")
@@ -103,6 +93,16 @@ current_api_key = None
 tl_client = None
 embedding_storage: Dict[str, Any] = {}
 video_storage: Dict[str, bytes] = {}
+video_path_storage: Dict[str, str] = {}
+
+BASE_DIR = Path(__file__).resolve().parent
+UPLOADS_DIR = BASE_DIR / "uploads"
+VIDEOS_DIR = BASE_DIR / "videos"
+UPLOADS_DIR.mkdir(exist_ok=True)
+VIDEOS_DIR.mkdir(exist_ok=True)
+
+MAX_EMBED_DURATION_SEC = 7200  # 2 hours
+MAX_EMBED_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 
 # Track server start time
 server_start_time = datetime.now(timezone.utc)
@@ -264,6 +264,190 @@ async def upload_and_generate_embeddings(
             os.unlink(tmp_file_path)
         raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {str(e)}")
 
+
+def run_ffprobe_duration_seconds(file_path: str) -> Optional[float]:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", file_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+def split_video_if_needed(src_path: str, dest_dir: Path) -> List[str]:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    duration = run_ffprobe_duration_seconds(src_path) or 0.0
+    size_bytes = os.path.getsize(src_path)
+    needs_split = (duration and duration > MAX_EMBED_DURATION_SEC) or size_bytes > MAX_EMBED_SIZE_BYTES
+    if not needs_split:
+        return [src_path]
+
+    # Split by time into chunks no longer than 3600 seconds to stay safely under 2h and reduce size
+    segment_time = 3600
+    pattern = str(dest_dir / "part_%03d.mp4")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", src_path, "-c", "copy", "-f", "segment",
+                "-reset_timestamps", "1", "-segment_time", str(segment_time), pattern
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except Exception as e:
+        logger.error(f"ffmpeg split failed: {e}")
+        # If split fails, fallback to single file
+        return [src_path]
+
+    # Collect generated parts
+    parts = sorted([str(p) for p in dest_dir.glob("part_*.mp4")])
+    return parts if parts else [src_path]
+
+
+def concat_chunks_to_file(chunks_dir: Path, output_path: Path, total_chunks: int) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as out_f:
+        for i in range(total_chunks):
+            chunk_file = chunks_dir / f"chunk_{i}.bin"
+            if not chunk_file.exists():
+                raise HTTPException(status_code=400, detail=f"Missing chunk {i}")
+            with open(chunk_file, "rb") as cf:
+                out_f.write(cf.read())
+
+
+@app.post("/upload/start")
+async def start_chunked_upload(videoName: Optional[str] = Form(None)):
+    session_id = uuid.uuid4().hex
+    session_dir = UPLOADS_DIR / session_id
+    chunks_dir = session_dir / "chunks"
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    return {"session_id": session_id, "video_id": session_id, "video_name": videoName or "video.mp4"}
+
+
+@app.post("/upload/chunk")
+async def upload_chunk(
+    session_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    chunk: UploadFile = File(...),
+    tl: TwelveLabs = Depends(get_twelve_labs_client),
+):
+    try:
+        session_dir = UPLOADS_DIR / session_id / "chunks"
+        if not session_dir.exists():
+            raise HTTPException(status_code=404, detail="Invalid session_id")
+        dest_path = session_dir / f"chunk_{chunk_index}.bin"
+        contents = await chunk.read()
+        with open(dest_path, "wb") as f:
+            f.write(contents)
+        return {"message": f"Chunk {chunk_index + 1}/{total_chunks} stored"}
+    except Exception as e:
+        logger.error(f"Error storing chunk: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to store chunk: {str(e)}")
+
+
+@app.post("/upload/finalize")
+async def finalize_upload(
+    session_id: str = Form(...),
+    original_filename: str = Form(...),
+    total_chunks: int = Form(...),
+    tl: TwelveLabs = Depends(get_twelve_labs_client),
+):
+    session_root = UPLOADS_DIR / session_id
+    chunks_dir = session_root / "chunks"
+    if not chunks_dir.exists():
+        raise HTTPException(status_code=404, detail="Invalid session_id")
+
+    # Concatenate chunks into a single mp4 file
+    combined_path = str(session_root / "combined.mp4")
+    try:
+        concat_chunks_to_file(chunks_dir, Path(combined_path), int(total_chunks))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Concatenation failed: {e}")
+        raise HTTPException(status_code=500, detail="Concatenation failed")
+
+    # Split if needed
+    parts_dir = session_root / "parts"
+    parts = split_video_if_needed(combined_path, parts_dir)
+
+    # Run embedding tasks on one or multiple parts
+    all_segments: List[Dict[str, Any]] = []
+    total_duration: float = 0.0
+    part_offsets: List[float] = []
+    for idx, part_path in enumerate(parts):
+        part_start_offset = sum(run_ffprobe_duration_seconds(p) or 0.0 for p in parts[:idx])
+        part_offsets.append(part_start_offset)
+        logger.info(f"Creating embedding task for part {idx+1}/{len(parts)}: {part_path}")
+        task = tl.embed.task.create(
+            model_name="Marengo-retrieval-2.7",
+            video_file=part_path,
+            video_clip_length=2,
+            video_embedding_scopes=["clip", "video"],
+        )
+
+        def on_task_update(t: EmbeddingsTask):  # type: ignore
+            logger.info(f"Task {t.id} status: {t.status}")
+
+        task.wait_for_done(sleep_interval=5, callback=on_task_update)
+        completed_task = tl.embed.task.retrieve(task.id)
+
+        part_duration = 0.0
+        if completed_task.video_embedding and completed_task.video_embedding.segments:
+            for seg in completed_task.video_embedding.segments:
+                all_segments.append({
+                    "start_offset_sec": (seg.start_offset_sec + part_start_offset),
+                    "end_offset_sec": (seg.end_offset_sec + part_start_offset),
+                    "embeddings_float": seg.embeddings_float,
+                })
+            part_duration = completed_task.video_embedding.segments[-1].end_offset_sec + part_start_offset
+        total_duration = max(total_duration, part_duration)
+
+    embedding_id = f"embed_{session_id}"
+    video_id = f"video_{session_id}"
+
+    embedding_storage[embedding_id] = {
+        "filename": original_filename,
+        "segments": all_segments,
+        "duration": total_duration,
+    }
+
+    # Persist combined file for serving
+    final_video_path = str(VIDEOS_DIR / f"{session_id}.mp4")
+    try:
+        os.replace(combined_path, final_video_path)
+    except Exception:
+        # If replace fails, copy
+        with open(combined_path, "rb") as src, open(final_video_path, "wb") as dst:
+            dst.write(src.read())
+    video_path_storage[video_id] = final_video_path
+
+    # Cleanup chunks directory to save space
+    try:
+        for p in chunks_dir.glob("*"):
+            p.unlink(missing_ok=True)
+        chunks_dir.rmdir()
+    except Exception:
+        pass
+
+    return {
+        "embeddings": {"segments": all_segments},
+        "filename": original_filename,
+        "duration": total_duration,
+        "embedding_id": embedding_id,
+        "video_id": video_id,
+    }
+
 @app.post("/compare-local-videos")
 async def compare_local_videos(
     embedding_id1: str = Query(...),
@@ -281,19 +465,35 @@ async def compare_local_videos(
         segments1 = []
         segments2 = []
         
-        if embed_data1["embeddings"] and embed_data1["embeddings"].segments:
-            segments1 = [{
-                "start_offset_sec": seg.start_offset_sec,
-                "end_offset_sec": seg.end_offset_sec,
-                "embedding": seg.embeddings_float
-            } for seg in embed_data1["embeddings"].segments]
+        if embed_data1.get("embeddings"):
+            emb1 = embed_data1["embeddings"]
+            if hasattr(emb1, "segments"):
+                segments1 = [{
+                    "start_offset_sec": seg.start_offset_sec,
+                    "end_offset_sec": seg.end_offset_sec,
+                    "embedding": seg.embeddings_float
+                } for seg in emb1.segments]
+            elif isinstance(emb1, dict) and isinstance(emb1.get("segments"), list):
+                segments1 = [{
+                    "start_offset_sec": seg["start_offset_sec"],
+                    "end_offset_sec": seg["end_offset_sec"],
+                    "embedding": seg.get("embedding") or seg.get("embeddings_float")
+                } for seg in emb1["segments"]]
         
-        if embed_data2["embeddings"] and embed_data2["embeddings"].segments:
-            segments2 = [{
-                "start_offset_sec": seg.start_offset_sec,
-                "end_offset_sec": seg.end_offset_sec,
-                "embedding": seg.embeddings_float
-            } for seg in embed_data2["embeddings"].segments]
+        if embed_data2.get("embeddings"):
+            emb2 = embed_data2["embeddings"]
+            if hasattr(emb2, "segments"):
+                segments2 = [{
+                    "start_offset_sec": seg.start_offset_sec,
+                    "end_offset_sec": seg.end_offset_sec,
+                    "embedding": seg.embeddings_float
+                } for seg in emb2.segments]
+            elif isinstance(emb2, dict) and isinstance(emb2.get("segments"), list):
+                segments2 = [{
+                    "start_offset_sec": seg["start_offset_sec"],
+                    "end_offset_sec": seg["end_offset_sec"],
+                    "embedding": seg.get("embedding") or seg.get("embeddings_float")
+                } for seg in emb2["segments"]]
         
         logger.info(f"Comparing {len(segments1)} segments from video1 with {len(segments2)} segments from video2, threshold: {threshold}")
         
@@ -363,10 +563,14 @@ async def compare_local_videos(
 
 @app.get("/serve-video/{video_id}")
 async def serve_video(video_id: str):
-    if video_id not in video_storage:
-        raise HTTPException(status_code=404, detail="Video not found")
-    
-    return Response(content=video_storage[video_id], media_type="video/mp4")
+    # Prefer disk path serving for large files
+    from fastapi.responses import FileResponse
+    path = video_path_storage.get(video_id)
+    if path and os.path.exists(path):
+        return FileResponse(path, media_type="video/mp4")
+    if video_id in video_storage:
+        return Response(content=video_storage[video_id], media_type="video/mp4")
+    raise HTTPException(status_code=404, detail="Video not found")
 
 # Custom 404 handler
 @app.exception_handler(404)
