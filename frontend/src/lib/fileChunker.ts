@@ -11,9 +11,9 @@ export interface ChunkedFile {
   totalChunks: number;
 }
 
-// Use conservative values to stay well under platform limits
-const CHUNKING_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4MB
-const CHUNK_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
+// Chunk files over 950MB to stay under Vercel's 1GB limit
+const CHUNKING_THRESHOLD_BYTES = 950 * 1024 * 1024; // 950MB
+const CHUNK_SIZE_BYTES = 100 * 1024 * 1024; // 100MB chunks
 
 export function shouldChunkFile(file: File): boolean {
   return file.size >= CHUNKING_THRESHOLD_BYTES;
